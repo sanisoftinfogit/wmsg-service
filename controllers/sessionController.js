@@ -1,29 +1,148 @@
-const { insertMobileRegistration } = require('../services/wmsgService');
-// const { startSock, pendingQRCodes, sessions } = require('../whatsapp/sessionManager');
-const { startSock, sessions, pendingQRCodes } = require('../sessionManager');
+// const { startSock, sessions, pendingQRCodes } = require('../sessionManager');
+// const fs = require("fs");
+// const path = require("path");
+
+// async function createSession(req, res) {
+//   const { sessionId } = req.body;
+
+//   if (!sessionId) {
+//     return res.status(400).json({ success: false, message: "Session ID is required" });
+//   }
+
+//   try {
+//     const sessionFolder = path.join(__dirname, "../sessions", sessionId);
+
+//     // ✅ जर session आधीपासून असेल
+//     if (fs.existsSync(sessionFolder)) {
+//       console.log(`🔄 Resuming existing session: ${sessionId}`);
+
+//       // socket initialize झालं नसेल तर पुन्हा सुरू कर
+//       if (!sessions[sessionId]) {
+//         await startSock(sessionId);
+//       }
+
+//       return res.json({
+//         success: true,
+//         sessionId,
+//         message: "Resumed existing session"
+//       });
+//     }
+
+//     // ✅ नवीन session सुरू कर
+//     if (!sessions[sessionId]) {
+//       await startSock(sessionId);
+//     }
+
+//     // ✅ QR generate होण्याची वाट पाहा
+//     let tries = 0;
+//     const interval = setInterval(() => {
+//       tries++;
+//       if (pendingQRCodes[sessionId]) {
+//         clearInterval(interval);
+//         return res.json({
+//           success: true,
+//           sessionId,
+//           qr: pendingQRCodes[sessionId] // Base64 QR
+//         });
+//       }
+//       if (tries > 20) {
+//         clearInterval(interval);
+//         return res.json({
+//           success: false,
+//           sessionId,
+//           message: "QR not generated yet. Try again."
+//         });
+//       }
+//     }, 1000);
+
+//   } catch (err) {
+//     console.error("❌ Error in createSession:", err);
+//     res.status(500).json({ success: false, message: "Server error" });
+//   }
+// }
+
+// async function sendMessage(req, res) {
+//   const { sessionId, number, message } = req.body;
+
+//   if (!sessionId || !number) {
+//     return res.status(400).json({ success: false, message: "SessionId and number are required" });
+//   }
+
+//   try {
+//     let sock = sessions[sessionId];
+
+//     if (!sock) {
+//       return res.status(400).json({ success: false, message: "Session not found. Please create session first." });
+//     }
+
+//     // ✅ connection state check करा
+//     if (!sock.authState?.creds || !sock.authState.creds.registered) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Session exists but not connected. Please scan QR again."
+//       });
+//     }
+
+//     const jid = number.includes("@s.whatsapp.net") ? number : `${number}@s.whatsapp.net`;
+
+//     await sock.sendMessage(jid, { text: message });
+
+//     res.json({ success: true, message: "Message sent successfully!" });
+
+//   } catch (err) {
+//     console.error("❌ sendMessage error:", err);
+//     res.status(500).json({ success: false, error: err.message });
+//   }
+// }
 
 
+// module.exports = { createSession, sendMessage };
+
+
+
+
+
+
+const { startSock, sessions, pendingQRCodes } = require("../sessionManager");
+const fs = require("fs");
+const path = require("path");
+
+/**
+ * ✅ Session Create / Resume
+ */
 async function createSession(req, res) {
-  const { sessionId, mobile, userid, login_id, api_key } = req.body;
+  const { sessionId } = req.body;
 
-  if (!sessionId || !mobile || !userid || !login_id || !api_key) {
-    return res.status(400).json({ success: false, message: "Missing required fields" });
+  if (!sessionId) {
+    return res
+      .status(400)
+      .json({ success: false, message: "Session ID is required" });
   }
 
   try {
-    // Step 1: Save Mobile Registration in DB
-    const result = await insertMobileRegistration({ mobile, userid, login_id, api_key });
+    const sessionFolder = path.join(__dirname, "../sessions", sessionId);
 
-    if (result !== 1) {
-      return res.status(400).json({ success: false, message: "Mobile registration failed" });
+    // 🔄 जर जुनी session folder असेल
+    if (fs.existsSync(sessionFolder)) {
+      console.log(`🔄 Resuming existing session: ${sessionId}`);
+
+      if (!sessions[sessionId]) {
+        await startSock(sessionId);
+      }
+
+      return res.json({
+        success: true,
+        sessionId,
+        message: "Resumed existing session",
+      });
     }
 
-    // Step 2: Start WhatsApp Session
+    // 🆕 नवीन session सुरू कर
     if (!sessions[sessionId]) {
       await startSock(sessionId);
     }
 
-    // Step 3: Wait for QR (20 sec)
+    // 📌 QR generate होण्याची वाट पाहा
     let tries = 0;
     const interval = setInterval(() => {
       tries++;
@@ -32,7 +151,7 @@ async function createSession(req, res) {
         return res.json({
           success: true,
           sessionId,
-          qr: pendingQRCodes[sessionId] // Base64 QR
+          qr: pendingQRCodes[sessionId], // Base64 QR
         });
       }
       if (tries > 20) {
@@ -40,65 +159,71 @@ async function createSession(req, res) {
         return res.json({
           success: false,
           sessionId,
-          message: "QR not generated yet. Try again."
+          message: "QR not generated yet. Try again.",
         });
       }
     }, 1000);
-
   } catch (err) {
     console.error("❌ Error in createSession:", err);
     res.status(500).json({ success: false, message: "Server error" });
   }
 }
 
-
+/**
+ * ✅ Send Message (Text + Image)
+ */
 async function sendMessage(req, res) {
   const { sessionId, number, message } = req.body;
+  const file = req.file; // multer ने upload केलेली image
+
+  if (!sessionId || !number) {
+    return res.status(400).json({
+      success: false,
+      message: "SessionId and number are required",
+    });
+  }
 
   try {
-    if (!sessions[sessionId]) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Session not found or not connected yet" });
+    let sock = sessions[sessionId];
+
+    if (!sock) {
+      return res.status(400).json({
+        success: false,
+        message: "Session not found. Please create session first.",
+      });
     }
 
-    if (!number) {
-      return res.status(400).json({ success: false, message: "Number is required" });
+    // ✅ फक्त auth creds अस्तित्व तपासा, registered check काढलं
+    if (!sock.authState?.creds) {
+      return res.status(400).json({
+        success: false,
+        message: "Session exists but not initialized. Please scan QR again.",
+      });
     }
 
+    // ✅ JID format fix
     const jid = number.includes("@s.whatsapp.net")
       ? number
       : `${number}@s.whatsapp.net`;
 
-    let options = {};
+    console.log(`📨 Sending to ${jid} via session ${sessionId}`);
 
-    // ✅ जर image upload केली असेल तर
-    if (req.file) {
-      options = {
-        image: req.file.buffer,   // थेट buffer दे
-        mimetype: req.file.mimetype, 
+    if (file) {
+      // जर image असेल
+      await sock.sendMessage(jid, {
+        image: fs.readFileSync(file.path),
         caption: message || "",
-      };
-    }
-    // ✅ फक्त text message
-    else if (message) {
-      options = { text: message };
+      });
     } else {
-      return res
-        .status(400)
-        .json({ success: false, message: "No message or image provided" });
+      // फक्त text
+      await sock.sendMessage(jid, { text: message });
     }
 
-    // ⚡ Send message using Baileys
-    await sessions[sessionId].sendMessage(jid, options);
-
-    res.json({ success: true, message: `Message sent from ${sessionId}` });
+    res.json({ success: true, message: "Message sent successfully!" });
   } catch (err) {
-    console.error("❌ Error sending message:", err);
+    console.error("❌ sendMessage error:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 }
 
-
-
-module.exports = { createSession,sendMessage };
+module.exports = { createSession, sendMessage };

@@ -4,7 +4,7 @@ const cors = require('cors');
 const app = express();
 const loginRoutes = require('./routes/loginRoutes');
 const sessionRoutes = require('./routes/sessionRoutes');
-
+const { loadExistingSessions } = require('./sessionManager');
 app.use(cors()); // <-- allow all origins (for dev)
 app.use(express.json());
 
@@ -16,7 +16,7 @@ const PORT = process.env.PORT || 3000;
 // app.listen(PORT, () => {
 //   console.log(`🚀 Server started on http://localhost:${PORT}`);
 // });
-
+loadExistingSessions();
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server started on http://0.0.0.0:${PORT}`);
 });
