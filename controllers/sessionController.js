@@ -5,9 +5,7 @@ const { startSock, sessions, pendingQRCodes } = require("../sessionManager");
 const fs = require("fs");
 const path = require("path");
 
-/**
- * ✅ Session Create / Resume
- */
+
 async function createSession(req, res) {
   const { sessionId } = req.body;
 
@@ -20,7 +18,7 @@ async function createSession(req, res) {
   try {
     const sessionFolder = path.join(__dirname, "../sessions", sessionId);
 
-    // 🔄 जर जुनी session folder असेल
+
     if (fs.existsSync(sessionFolder)) {
       console.log(`🔄 Resuming existing session: ${sessionId}`);
 
