@@ -37,11 +37,9 @@ async function createSession(req, res) {
       });
     }
 
-    // 🆕 नवीन session सुरू कर
     if (!sessions[sessionId]) {
       await startSock(sessionId);
 
-      // ✅ इथे DB insert call करा
       try {
         const dbResult = await insertMobileRegistration({
           mobile,
@@ -55,7 +53,7 @@ async function createSession(req, res) {
       }
     }
 
-    // 📌 QR generate होण्याची वाट पाहा
+   
     let tries = 0;
     const interval = setInterval(() => {
       tries++;
@@ -81,12 +79,10 @@ async function createSession(req, res) {
     res.status(500).json({ success: false, message: "Server error" });
   }
 }
-/**
- * ✅ Send Message (Text + Image)
- */
+
 async function sendMessage(req, res) {
   const { sessionId, number, message } = req.body;
-  const files = req.files; // multer.memoryStorage() वापरल्यास
+  const files = req.files; 
 
   if (!sessionId || !number) {
     return res.status(400).json({
@@ -121,13 +117,13 @@ async function sendMessage(req, res) {
     if (files && files.length > 0) {
       for (const file of files) {
         await sock.sendMessage(jid, {
-          image: file.buffer, // <- buffer वापरा path ऐवजी
+          image: file.buffer, 
           caption: message || "",
         });
       }
     } else if (req.file) {
       await sock.sendMessage(jid, {
-        image: req.file.buffer, // <- single image buffer
+        image: req.file.buffer, 
         caption: message || "",
       });
     } else {
@@ -141,9 +137,7 @@ async function sendMessage(req, res) {
   }
 }
 
-/**
- * ✅ Schedule Message
- */
+
 async function scheduleMessage(req, res) {
   const { sessionId, numbers, message, time, startDate, endDate } = req.body;
 
@@ -173,14 +167,14 @@ async function scheduleMessage(req, res) {
       });
     }
 
-    // time = "HH:mm:ss"
+  
     const [hours, minutes, seconds] = time.split(":").map(Number);
 
-    // startDate = "YYYY-MM-DD"
+   
     const [sy, sm, sd] = startDate.split("-").map(Number);
     const start = new Date(sy, sm - 1, sd, hours, minutes, seconds);
 
-    // endDate = "YYYY-MM-DD"
+    
     const [ey, em, ed] = endDate.split("-").map(Number);
     const end = new Date(ey, em - 1, ed, 23, 59, 59);
 
@@ -198,7 +192,7 @@ async function scheduleMessage(req, res) {
       });
     }
 
-    // ✅ Daily job rule
+   
     const rule = new schedule.RecurrenceRule();
     rule.hour = hours;
     rule.minute = minutes;
@@ -214,7 +208,7 @@ async function scheduleMessage(req, res) {
 
       if (now > end) {
         console.log(`🛑 Stopping job after endDate: ${end}`);
-        job.cancel(); // end date नंतर job थांबव
+        job.cancel(); 
         return;
       }
 
@@ -391,7 +385,7 @@ async function getGroupList(req, res) {
 }
 
 async function getGroupNumbers(req, res) {
-  const { group_id } = req.params; // GET method वापरतो
+  const { group_id } = req.params; 
 
   if (!group_id) {
     return res.status(400).json({
@@ -420,6 +414,72 @@ async function getGroupNumbers(req, res) {
   }
 }
 
+async function sendBulkMessage(req, res) {
+  const { sessionId, numbers, message, delay = 1000 } = req.body;
+  
+  const files = req.files;
+
+  if (!sessionId || !numbers || !Array.isArray(numbers) || numbers.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: "SessionId and numbers (array) are required",
+    });
+  }
+
+  let sock = sessions[sessionId];
+  if (!sock) {
+    return res.status(400).json({
+      success: false,
+      message: "Session not found. Please create session first.",
+    });
+  }
+
+  if (!sock.authState?.creds) {
+    return res.status(400).json({
+      success: false,
+      message: "Session exists but not initialized. Please scan QR again.",
+    });
+  }
+
+ 
+  res.json({
+    success: true,
+    message: `Bulk message process started. Messages will be sent in background with ${delay / 1000} sec delay`,
+    totalNumbers: numbers.length,
+  });
 
 
-module.exports = { createSession, sendMessage,scheduleMessage,checkSession,removeSession,addGroup, modifyGroup,getGroupList,getGroupNumbers };
+  (async () => {
+    for (const number of numbers) {
+      const jid = number.includes("@s.whatsapp.net")
+        ? number
+        : `${number}@s.whatsapp.net`;
+
+      try {
+        if (files && files.length > 0) {
+          for (const file of files) {
+            await sock.sendMessage(jid, {
+              image: file.buffer,
+              caption: message || "",
+            });
+          }
+        } else {
+          await sock.sendMessage(jid, { text: message });
+        }
+
+        console.log(`✅ Sent to ${number}`);
+      } catch (err) {
+        console.error(`❌ Failed to send to ${number}:`, err.message);
+      }
+
+    
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+
+    console.log("🎉 Bulk sending finished!");
+  })();
+}
+
+
+
+module.exports = { createSession, sendMessage,scheduleMessage,checkSession,removeSession,addGroup, modifyGroup,getGroupList,getGroupNumbers,sendBulkMessage};

@@ -13,7 +13,7 @@ async function insertMobileRegistration({ mobile, userid, login_id, api_key }) {
       .output('Result', sql.Int)
       .execute('saniszu9_1.sp_wmsg');
 
-    return result.output.Result; // 1 = success, 0 = fail
+    return result.output.Result;
   } catch (err) {
     console.error("❌ Error in WMSG Service:", err);
     throw err;
@@ -31,7 +31,7 @@ async function deleteSession({ mobile, login_id }) {
       .output('Result', sql.Int)
       .execute('saniszu9_1.sp_wmsg');
 
-    return result.output.Result; // 1 = success, 0 = fail
+    return result.output.Result; 
   } catch (err) {
     console.error("❌ Error in deleteSession Service:", err);
     throw err;
@@ -42,7 +42,7 @@ async function insertGroup({ login_id, group_name, numbers }) {
   try {
     let pool = await getConnection();
 
-    // Table-Valued Parameter तयार करायचं
+    
     const tvp = new sql.Table();
     tvp.columns.add('name', sql.NVarChar(100));
     tvp.columns.add('number', sql.VarChar(20));
@@ -55,11 +55,11 @@ async function insertGroup({ login_id, group_name, numbers }) {
       .input('Action', sql.NVarChar(50), 'InsertGroup')
       .input('login_id', sql.VarChar(50), login_id)
       .input('group_name', sql.NVarChar(200), group_name)
-      .input('TempNumbers', tvp) // SP मधल्या @TempNumbers type शी match हवं
+      .input('TempNumbers', tvp) 
       .output('Result', sql.Int)
       .execute('saniszu9_1.sp_wmsg');
 
-    return result.output.Result; // 0/1/2
+    return result.output.Result; 
   } catch (err) {
     console.error("❌ insertGroup Service error:", err);
     throw err;
@@ -103,7 +103,7 @@ async function getGroupsByLoginId(login_id) {
       .input("login_id", sql.NVarChar(50), login_id)
       .execute("saniszu9_1.sp_wmsg");
 
-    return result.recordset; // groups list
+    return result.recordset; 
   } catch (err) {
     console.error("❌ Error in getGroupsByLoginId:", err);
     throw err;
@@ -119,7 +119,7 @@ async function getGroupNumbersByGroupId(group_id) {
       .input("group_id", sql.Int, group_id)
       .execute("saniszu9_1.sp_wmsg");
 
-    return result.recordset; // group numbers
+    return result.recordset;
   } catch (err) {
     console.error("❌ Error in getGroupNumbersByGroupId:", err);
     throw err;

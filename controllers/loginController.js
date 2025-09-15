@@ -9,8 +9,8 @@ async function handleLogin(req, res) {
     if (result.loginDetails.length > 0) {
       res.json({
         success: true,
-        loginDetails: result.loginDetails[0],   // single row (username, password, post)
-        mobileDetails: result.mobileDetails     // list of mobiles
+        loginDetails: result.loginDetails[0],   
+        mobileDetails: result.mobileDetails   
       });
     } else {
       res.status(401).json({ success: false, message: "Invalid credentials" });

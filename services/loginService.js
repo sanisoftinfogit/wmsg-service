@@ -10,10 +10,10 @@ async function loginUser(username, password) {
       .input('password', sql.VarChar, password)
       .execute('saniszu9_1.sp_login'); 
 
-    // result.recordsets → array of multiple recordsets
+
     return {
-      loginDetails: result.recordsets[0] || [],  // username, password, post
-      mobileDetails: result.recordsets[1] || []  // mobile, userid
+      loginDetails: result.recordsets[0] || [],  
+      mobileDetails: result.recordsets[1] || []  
     };
 
   } catch (err) {
