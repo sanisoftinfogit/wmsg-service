@@ -1,0 +1,8 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/root/public_html
+    - /bin/rsync -a --exclude='.git' --exclude='.cpanel.yml' ./ $DEPLOYPATH
+    - cd $DEPLOYPATH
+    - /opt/cpanel/ea-nodejs20/bin/npm install --production
+    - /opt/cpanel/ea-nodejs20/bin/ctl_app restart $DEPLOYPATH
