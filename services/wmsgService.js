@@ -1,5 +1,6 @@
 const { sql, getConnection } = require('../config/db');
 
+
 async function insertMobileRegistration({ mobile, userid, login_id, api_key }) {
   try {
     let pool = await getConnection();
@@ -16,6 +17,71 @@ async function insertMobileRegistration({ mobile, userid, login_id, api_key }) {
     return result.output.Result;
   } catch (err) {
     console.error("❌ Error in WMSG Service:", err);
+    throw err;
+  }
+}
+
+// async function insertMsgSchedule({ login_id, mobile, jid, msdate, medate, mtime }) {
+//   try {
+//     let pool = await getConnection();
+
+//     let result = await pool.request()
+//       .input('Action', sql.NVarChar(100), 'InsertMSGSchedule')
+//       .input('login_id', sql.VarChar(20), login_id)
+//       .input('mobile', sql.VarChar(20), mobile)
+//       .input('jid', sql.VarChar(50), jid)
+//       .input('msdate', sql.Date, msdate)   // startDate
+//       .input('medate', sql.Date, medate)   // endDate
+//       .input('mtime', sql.VarChar(10), mtime) // HH:mm:ss
+//       .output('Result', sql.Int)
+//       .execute('saniszu9_1.sp_wmsg');
+
+//     return result.output.Result;
+//   } catch (err) {
+//     console.error("❌ Error in insertMSGSchedule:", err);
+//     throw err;
+//   }
+// }
+async function insertMSGSchedule({ login_id, mobile, jid, msdate, medate, mtime }) {
+  try {
+    let pool = await getConnection();
+
+    let result = await pool.request()
+      .input('Action', sql.NVarChar(100), 'InsertMSGSchedule')
+      .input('login_id', sql.VarChar(20), login_id)
+      .input('mobile', sql.VarChar(20), mobile)
+      .input('jid', sql.Int, jid)   // jid generated in backend
+      .input('msdate', sql.Date, msdate)
+      .input('medate', sql.Date, medate)
+      .input('mtime', sql.NVarChar(20), mtime)
+      .output('Result', sql.Int)
+      .execute('saniszu9_1.sp_wmsg');
+
+    return result.output.Result;
+  } catch (err) {
+    console.error("❌ Error in insertMSGSchedule:", err);
+    throw err;
+  }
+}
+
+async function updateMSGSchedule({ login_id, mobile, jid, msdate, medate, mtime }) {
+  try {
+    let pool = await getConnection();
+
+    let result = await pool.request()
+      .input('Action', sql.NVarChar(100), 'UpdateMSGSchedule')
+      .input('login_id', sql.VarChar(20), login_id)
+      .input('mobile', sql.VarChar(20), mobile)
+      .input('jid', sql.Int, jid)
+      .input('msdate', sql.Date, msdate)
+      .input('medate', sql.Date, medate)
+      .input('mtime', sql.NVarChar(20), mtime)
+      .output('Result', sql.Int)
+      .execute('saniszu9_1.sp_wmsg');
+
+    return result.output.Result;
+  } catch (err) {
+    console.error("❌ Error in updateMSGSchedule service:", err);
     throw err;
   }
 }
@@ -126,6 +192,41 @@ async function getGroupNumbersByGroupId(group_id) {
   }
 }
 
+async function listMSGSchedules() {
+  try {
+    const pool = await getConnection();
+
+    const result = await pool.request()
+      .input('Action', sql.NVarChar(50), 'ListMSGSchedule')
+      .execute('saniszu9_1.sp_wmsg');
+
+    return result.recordset; // array of scheduled messages
+  } catch (err) {
+    console.error("❌ Error in listMSGSchedules:", err);
+    throw err;
+  }
+}
 
 
-module.exports = { insertMobileRegistration,deleteSession,insertGroup, updateGroup,getGroupsByLoginId,getGroupNumbersByGroupId };
+async function execSP(spName, inputParams = {}) {
+  try {
+    const pool = await getConnection(); // 🔹 connection pool मिळवा
+    const request = pool.request();     // 🔹 SP call करण्यासाठी request तयार करा
+
+    for (const key in inputParams) {
+      const value = inputParams[key];
+      request.input(key, value);
+    }
+
+    const result = await request.execute(spName);
+    return result.recordset || result;
+  } catch (err) {
+    console.error("❌ execSP error:", err);
+    throw err;
+  }
+}
+
+
+
+
+module.exports = { insertMobileRegistration,updateMSGSchedule,deleteSession,insertGroup, updateGroup,getGroupsByLoginId,getGroupNumbersByGroupId,insertMSGSchedule,listMSGSchedules,execSP};
