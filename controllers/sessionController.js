@@ -29,11 +29,8 @@ async function createSession(req, res) {
     if (fs.existsSync(sessionFolder)) {
       console.log(`🔄 Resuming existing session: ${sessionId}`);
 
-        // const allowedUserIds = req.body.mobileDetails?.map(m => m.userid) || [];
-
       if (!sessions[sessionId]) {
         await startSock(sessionId);
-        //  await startSock(sessionId, allowedUserIds);
       }
 
       return res.json({
@@ -769,8 +766,9 @@ async function getGroupNumbers(req, res) {
 }
 
 
+
 // async function sendBulkMessage(req, res) {
-//   const { sessionId, numbers, caption, message } = req.body;
+//   const { sessionId, numbers,caption, message } = req.body;
 //   const files = req.files;
 
 //   // ✅ Validation
@@ -799,7 +797,7 @@ async function getGroupNumbers(req, res) {
 //   // ✅ Immediate response to client
 //   res.json({
 //     success: true,
-//     message: `Bulk message process started. Messages will be sent in background with random delay (22s - 35s)`,
+//     message: `Bulk message process started. Messages will be sent in background with random delay (28s - 35s)`,
 //     totalNumbers: numbers.length,
 //   });
 
@@ -816,38 +814,13 @@ async function getGroupNumbers(req, res) {
 //           await sock.sendMessage(jid, { text: message });
 //         }
 
-//         // 2️⃣ Send media files (if any)
+//         // 2️⃣ Then send images (if any)
 //         if (files && files.length > 0) {
 //           for (const file of files) {
-//             const mime = file.mimetype;
-
-//             if (mime.startsWith("image/")) {
-//               // 🖼️ Image
-//               await sock.sendMessage(jid, {
-//                 image: file.buffer,
-//                 caption: caption || "",
-//               });
-//             } else if (mime.startsWith("video/")) {
-//               // 🎥 Video
-//               await sock.sendMessage(jid, {
-//                 video: file.buffer,
-//                 caption: caption || "",
-//               });
-//             } else if (mime.startsWith("audio/")) {
-//               // 🎵 Audio
-//               await sock.sendMessage(jid, {
-//                 audio: file.buffer,
-//                 mimetype: mime,
-//               });
-//             } else {
-//               // 📄 Document (PDF, text, etc.)
-//               await sock.sendMessage(jid, {
-//                 document: file.buffer,
-//                 fileName: file.originalname,
-//                 mimetype: mime,
-//                 caption: caption || "",
-//               });
-//             }
+//             await sock.sendMessage(jid, {
+//               image: file.buffer,
+//              caption: caption || "",
+//             });
 //           }
 //         }
 
@@ -856,7 +829,7 @@ async function getGroupNumbers(req, res) {
 //         console.error(`❌ Failed to send to ${number}:`, err.message);
 //       }
 
-//       // 3️⃣ Random delay between 22s - 35s
+//       // 3️⃣ Random delay between 28s - 35s
 //       const randomDelay = getRandomDelay();
 //       console.log(`⏳ Waiting ${randomDelay / 1000} sec before next message...`);
 //       await new Promise((resolve) => setTimeout(resolve, randomDelay));
@@ -864,6 +837,11 @@ async function getGroupNumbers(req, res) {
 
 //     console.log("🎉 Bulk sending finished!");
 //   })();
+// }
+
+// // 🔹 Helper function
+// function getRandomDelay(min = 22000, max = 35000) {
+//   return Math.floor(Math.random() * (max - min + 1)) + min;
 // }
 
 
@@ -901,10 +879,6 @@ async function sendBulkMessage(req, res) {
     totalNumbers: numbers.length,
   });
 
-  // Helpers
-  const getTypingDelay = () =>
-    Math.floor(Math.random() * (5000 - 2000 + 1)) + 2000; // 2–5 sec
-
   // ✅ Background bulk sending
   (async () => {
     for (const number of numbers) {
@@ -913,48 +887,36 @@ async function sendBulkMessage(req, res) {
         : `${number}@s.whatsapp.net`;
 
       try {
-        // 1️⃣ Send text message with typing simulation
+        // 1️⃣ Send text message first
         if (message) {
-          await sock.presenceSubscribe(jid);
-          await sock.sendPresenceUpdate("composing", jid);
-
-          const typingDelay = getTypingDelay();
-          console.log(`✍️ Simulating typing for ${typingDelay / 1000}s before sending text to ${number}`);
-          await new Promise((res) => setTimeout(res, typingDelay));
-
-          await sock.sendPresenceUpdate("paused", jid);
-
           await sock.sendMessage(jid, { text: message });
         }
 
-        // 2️⃣ Send media files (if any) with "uploading" simulation
+        // 2️⃣ Send media files (if any)
         if (files && files.length > 0) {
           for (const file of files) {
             const mime = file.mimetype;
 
-            await sock.presenceSubscribe(jid);
-            await sock.sendPresenceUpdate("composing", jid); // simulate "uploading..."
-            const uploadDelay = getTypingDelay();
-            console.log(`📤 Simulating upload for ${uploadDelay / 1000}s before sending media to ${number}`);
-            await new Promise((res) => setTimeout(res, uploadDelay));
-            await sock.sendPresenceUpdate("paused", jid);
-
             if (mime.startsWith("image/")) {
+              // 🖼️ Image
               await sock.sendMessage(jid, {
                 image: file.buffer,
                 caption: caption || "",
               });
             } else if (mime.startsWith("video/")) {
+              // 🎥 Video
               await sock.sendMessage(jid, {
                 video: file.buffer,
                 caption: caption || "",
               });
             } else if (mime.startsWith("audio/")) {
+              // 🎵 Audio
               await sock.sendMessage(jid, {
                 audio: file.buffer,
                 mimetype: mime,
               });
             } else {
+              // 📄 Document (PDF, text, etc.)
               await sock.sendMessage(jid, {
                 document: file.buffer,
                 fileName: file.originalname,
@@ -970,7 +932,7 @@ async function sendBulkMessage(req, res) {
         console.error(`❌ Failed to send to ${number}:`, err.message);
       }
 
-      // 3️⃣ Random delay between 22s - 35s before next number
+      // 3️⃣ Random delay between 22s - 35s
       const randomDelay = getRandomDelay();
       console.log(`⏳ Waiting ${randomDelay / 1000} sec before next message...`);
       await new Promise((resolve) => setTimeout(resolve, randomDelay));
@@ -980,11 +942,10 @@ async function sendBulkMessage(req, res) {
   })();
 }
 
-// 🔹 Helper function (use only this one for random delay)
-function getRandomDelay(min = 25000, max = 55000) {
+// 🔹 Helper function
+function getRandomDelay(min = 22000, max = 35000) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
-
 
 
 
