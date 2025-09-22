@@ -168,26 +168,13 @@ async function startSock(sessionId) {
       delete pendingQRCodes[sessionId];
     }
 
-   if (connection === "close") {
-  const reason = lastDisconnect?.error?.output?.statusCode;
-  console.log(`❌ [${sessionId}] Disconnected:`, reason);
-
-  if (reason === DisconnectReason.loggedOut) {
-    console.log(`🛑 [${sessionId}] Session logged out, deleting session folder...`);
-
-    // remove from sessions memory
-    delete sessions[sessionId]; 
-    delete pendingQRCodes[sessionId];
-
-    // remove session folder
-    const sessionPath = path.join(__dirname, "sessions", sessionId);
-    if (fs.existsSync(sessionPath)) {
-      fs.rmSync(sessionPath, { recursive: true, force: true });
-      console.log(`🗑 [${sessionId}] Session folder deleted`);
+    if (connection === "close") {
+      const reason = lastDisconnect?.error?.output?.statusCode;
+      console.log(`❌ [${sessionId}] Disconnected:`, reason);
+      if (reason !== DisconnectReason.loggedOut) {
+        startSock(sessionId); // auto reconnect
+      }
     }
-  }
-}
-
   });
 
   sock.ev.on("creds.update", saveCreds);
