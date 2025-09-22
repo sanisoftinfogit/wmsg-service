@@ -107,26 +107,28 @@ sock.ev.on("connection.update", async (update) => {
     delete pendingQRCodes[sessionId];
   }
 
- if (connection === "close") {
+  if (connection === "close") {
   const statusCode = lastDisconnect?.error?.output?.statusCode;
 
   if (statusCode === DisconnectReason.loggedOut) {
-    // फक्त logged out झाल्यावर session delete
-    console.log("🛑 [${sessionId}] Logged out → deleting folder");
+    // Already deleting session folder
+    console.log(`🛑 [${sessionId}] Logged out → deleting folder`);
     delete sessions[sessionId];
     delete pendingQRCodes[sessionId];
     const sessionPath = path.join(__dirname, "sessions", sessionId);
     if (fs.existsSync(sessionPath)) fs.rmSync(sessionPath, { recursive: true, force: true });
-  } else if (statusCode === DisconnectReason.connectionClosed || statusCode === DisconnectReason.connectionLost || statusCode === 409) {
-    // Temporary error / conflict → just reconnect, don't delete folder
-    console.log("🔄 [${sessionId}] Temporary disconnect/conflict → reconnecting without deleting session");
-    qrGenerated = false;
-    startSock(sessionId);
   } else {
-    console.log("❌ [${sessionId}] Unknown disconnect → check manually");
+    // Only reconnect if session folder still exists
+    const sessionPath = path.join(__dirname, "sessions", sessionId);
+    if (fs.existsSync(sessionPath)) {
+      console.log(`🔄 [${sessionId}] Reconnecting...`);
+      qrGenerated = false;
+      startSock(sessionId);
+    } else {
+      console.log(`❌ [${sessionId}] Session folder missing → not reconnecting`);
+    }
   }
 }
-
 
 });
 
