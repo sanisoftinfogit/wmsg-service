@@ -151,61 +151,43 @@ async function startSock(sessionId) {
     auth: state,
     browser: ["Chrome (Linux)", "Chrome", "121.0.6167.85"],
     syncFullHistory: false,
-    printQRInTerminal: true,
+    printQRInTerminal: true
   });
-
-  let qrGenerated = false; // QR generation flag
 
   sock.ev.on("connection.update", async (update) => {
     const { qr, connection, lastDisconnect } = update;
 
-    // ---------------- QR Handling ----------------
-    if (qr && !qrGenerated) {
-      qrGenerated = true;
+    if (qr) {
       const qrDataUrl = await qrcode.toDataURL(qr);
       pendingQRCodes[sessionId] = qrDataUrl;
-      console.log(`📌 [${sessionId}] QR generated (valid for 20s)`);
-
-      // Only expire QR after 20 sec, DO NOT delete session folder
-      setTimeout(() => {
-        if (pendingQRCodes[sessionId]) {
-          delete pendingQRCodes[sessionId];
-          console.log(`⌛ [${sessionId}] QR expired (20s over)`);
-        }
-      }, 20000);
+      console.log(`📌 [${sessionId}] QR generated`);
     }
 
-    // ---------------- Connection Open ----------------
     if (connection === "open") {
       console.log(`✅ [${sessionId}] Connected`);
       delete pendingQRCodes[sessionId];
     }
 
-    // ---------------- Connection Close ----------------
-    if (connection === "close") {
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
-      console.log(`❌ [${sessionId}] Disconnected:`, statusCode);
+   if (connection === "close") {
+  const reason = lastDisconnect?.error?.output?.statusCode;
+  console.log(`❌ [${sessionId}] Disconnected:`, reason);
 
-      if (statusCode === DisconnectReason.loggedOut) {
-        // Only delete session if explicitly logged out
-        console.log(`🛑 [${sessionId}] Logged out → deleting session folder`);
-        delete sessions[sessionId];
-        delete pendingQRCodes[sessionId];
-        if (fs.existsSync(sessionPath)) {
-          fs.rmSync(sessionPath, { recursive: true, force: true });
-          console.log(`🗑 [${sessionId}] Session folder deleted`);
-        }
-      } else {
-        // Reconnect only if session folder exists
-        if (fs.existsSync(sessionPath)) {
-          console.log(`🔄 [${sessionId}] Reconnecting...`);
-          qrGenerated = false;
-          startSock(sessionId);
-        } else {
-          console.log(`❌ [${sessionId}] Session folder missing → not reconnecting`);
-        }
-      }
+  if (reason === DisconnectReason.loggedOut) {
+    console.log(`🛑 [${sessionId}] Session logged out, deleting session folder...`);
+
+    // remove from sessions memory
+    delete sessions[sessionId]; 
+    delete pendingQRCodes[sessionId];
+
+    // remove session folder
+    const sessionPath = path.join(__dirname, "sessions", sessionId);
+    if (fs.existsSync(sessionPath)) {
+      fs.rmSync(sessionPath, { recursive: true, force: true });
+      console.log(`🗑 [${sessionId}] Session folder deleted`);
     }
+  }
+}
+
   });
 
   sock.ev.on("creds.update", saveCreds);
@@ -213,25 +195,15 @@ async function startSock(sessionId) {
   return sock;
 }
 
-// ---------------- Load Existing Sessions ----------------
+// ✅ Backend restart झाल्यावर जुने sessions re-load करा
 function loadExistingSessions() {
   const basePath = path.join(__dirname, "sessions");
   if (!fs.existsSync(basePath)) return;
 
   const sessionDirs = fs.readdirSync(basePath);
   sessionDirs.forEach((dir) => {
-    const sessionPath = path.join(basePath, dir);
-    const files = fs.readdirSync(sessionPath);
-    const hasCreds = files.some(f => f.includes("creds.json"));
-
-    if (hasCreds) {
-      console.log(`🔄 Reloading session: ${dir}`);
-      startSock(dir);
-    } else {
-      // Invalid session → delete folder
-      fs.rmSync(sessionPath, { recursive: true, force: true });
-      console.log(`🗑 [${dir}] Old/invalid session folder deleted on restart`);
-    }
+    console.log(`🔄 Reloading session: ${dir}`);
+    startSock(dir);
   });
 }
 
