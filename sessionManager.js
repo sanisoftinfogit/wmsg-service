@@ -108,24 +108,28 @@ sock.ev.on("connection.update", async (update) => {
   }
 
   if (connection === "close") {
-    const statusCode = lastDisconnect?.error?.output?.statusCode;
-    console.log(`❌ [${sessionId}] Disconnected:`, statusCode);
+  const statusCode = lastDisconnect?.error?.output?.statusCode;
 
-    if (statusCode === DisconnectReason.loggedOut) {
-      console.log(`🛑 [${sessionId}] Session logged out, deleting session folder...`);
-      delete sessions[sessionId];
-      delete pendingQRCodes[sessionId];
-      const sessionPath = path.join(__dirname, "sessions", sessionId);
-      if (fs.existsSync(sessionPath)) {
-        fs.rmSync(sessionPath, { recursive: true, force: true });
-        console.log(`🗑 [${sessionId}] Session folder deleted`);
-      }
-    } else {
+  if (statusCode === DisconnectReason.loggedOut) {
+    // Already deleting session folder
+    console.log(`🛑 [${sessionId}] Logged out → deleting folder`);
+    delete sessions[sessionId];
+    delete pendingQRCodes[sessionId];
+    const sessionPath = path.join(__dirname, "sessions", sessionId);
+    if (fs.existsSync(sessionPath)) fs.rmSync(sessionPath, { recursive: true, force: true });
+  } else {
+    // Only reconnect if session folder still exists
+    const sessionPath = path.join(__dirname, "sessions", sessionId);
+    if (fs.existsSync(sessionPath)) {
       console.log(`🔄 [${sessionId}] Reconnecting...`);
-      qrGenerated = false; // reset flag on reconnect
+      qrGenerated = false;
       startSock(sessionId);
+    } else {
+      console.log(`❌ [${sessionId}] Session folder missing → not reconnecting`);
     }
   }
+}
+
 });
 
 
@@ -135,7 +139,7 @@ sock.ev.on("connection.update", async (update) => {
   return sock;
 }
 
-// ✅ Backend restart झाल्यावर जुने sessions re-load करा
+
 // function loadExistingSessions() {
 //   const basePath = path.join(__dirname, "sessions");
 //   if (!fs.existsSync(basePath)) return;
@@ -147,7 +151,7 @@ sock.ev.on("connection.update", async (update) => {
 //   });
 // }
 
-// ✅ Backend restart झाल्यावर जुने sessions re-load करा
+
 function loadExistingSessions() {
   const basePath = path.join(__dirname, "sessions");
   if (!fs.existsSync(basePath)) return;
