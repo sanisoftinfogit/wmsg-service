@@ -136,15 +136,40 @@ sock.ev.on("connection.update", async (update) => {
 }
 
 // ✅ Backend restart झाल्यावर जुने sessions re-load करा
+// function loadExistingSessions() {
+//   const basePath = path.join(__dirname, "sessions");
+//   if (!fs.existsSync(basePath)) return;
+
+//   const sessionDirs = fs.readdirSync(basePath);
+//   sessionDirs.forEach((dir) => {
+//     console.log(`🔄 Reloading session: ${dir}`);
+//     startSock(dir);
+//   });
+// }
+
+// ✅ Backend restart झाल्यावर जुने sessions re-load करा
 function loadExistingSessions() {
   const basePath = path.join(__dirname, "sessions");
   if (!fs.existsSync(basePath)) return;
 
   const sessionDirs = fs.readdirSync(basePath);
   sessionDirs.forEach((dir) => {
-    console.log(`🔄 Reloading session: ${dir}`);
-    startSock(dir);
+    const sessionPath = path.join(basePath, dir);
+
+    // Check folder valid आहे का
+    const files = fs.readdirSync(sessionPath);
+    const hasCreds = files.some(f => f.includes("creds.json"));
+
+    if (hasCreds) {
+      console.log(`🔄 Reloading session: ${dir}`);
+      startSock(dir);
+    } else {
+      // ❌ Invalid/Disconnected session → delete करा
+      fs.rmSync(sessionPath, { recursive: true, force: true });
+      console.log(`🗑 [${dir}] Old session folder deleted on restart`);
+    }
   });
 }
+
 
 module.exports = { startSock, sessions, pendingQRCodes, loadExistingSessions };
