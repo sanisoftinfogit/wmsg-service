@@ -73,28 +73,62 @@ async function startSock(sessionId) {
     printQRInTerminal: true
   });
 
-  sock.ev.on("connection.update", async (update) => {
-    const { qr, connection, lastDisconnect } = update;
+  let qrGenerated = false; // flag
 
-    if (qr) {
-      const qrDataUrl = await qrcode.toDataURL(qr);
-      pendingQRCodes[sessionId] = qrDataUrl;
-      console.log(`📌 [${sessionId}] QR generated`);
-    }
+sock.ev.on("connection.update", async (update) => {
+  const { qr, connection, lastDisconnect } = update;
 
-    if (connection === "open") {
-      console.log(`✅ [${sessionId}] Connected`);
+  if (qr && !qrGenerated) {
+  qrGenerated = true;
+  const qrDataUrl = await qrcode.toDataURL(qr);
+  pendingQRCodes[sessionId] = qrDataUrl;
+  console.log(`📌 [${sessionId}] QR generated (valid for 20s)`);
+
+  // ⏳ Expire QR after 20 sec
+  setTimeout(() => {
+    if (pendingQRCodes[sessionId]) {
       delete pendingQRCodes[sessionId];
-    }
+      console.log(`⌛ [${sessionId}] QR expired (20s over)`);
 
-    if (connection === "close") {
-      const reason = lastDisconnect?.error?.output?.statusCode;
-      console.log(`❌ [${sessionId}] Disconnected:`, reason);
-      if (reason !== DisconnectReason.loggedOut) {
-        startSock(sessionId); // auto reconnect
+      // 🗑️ Delete session also on expiry
+      delete sessions[sessionId];
+      const sessionPath = path.join(__dirname, "sessions", sessionId);
+      if (fs.existsSync(sessionPath)) {
+        fs.rmSync(sessionPath, { recursive: true, force: true });
+        console.log(`🗑 [${sessionId}] Session folder deleted (QR expired)`);
       }
     }
-  });
+  }, 30000);
+}
+
+
+  if (connection === "open") {
+    console.log(`✅ [${sessionId}] Connected`);
+    delete pendingQRCodes[sessionId];
+  }
+
+  if (connection === "close") {
+    const statusCode = lastDisconnect?.error?.output?.statusCode;
+    console.log(`❌ [${sessionId}] Disconnected:`, statusCode);
+
+    if (statusCode === DisconnectReason.loggedOut) {
+      console.log(`🛑 [${sessionId}] Session logged out, deleting session folder...`);
+      delete sessions[sessionId];
+      delete pendingQRCodes[sessionId];
+      const sessionPath = path.join(__dirname, "sessions", sessionId);
+      if (fs.existsSync(sessionPath)) {
+        fs.rmSync(sessionPath, { recursive: true, force: true });
+        console.log(`🗑 [${sessionId}] Session folder deleted`);
+      }
+    } else {
+      console.log(`🔄 [${sessionId}] Reconnecting...`);
+      qrGenerated = false; // reset flag on reconnect
+      startSock(sessionId);
+    }
+  }
+});
+
+
 
   sock.ev.on("creds.update", saveCreds);
   sessions[sessionId] = sock;
