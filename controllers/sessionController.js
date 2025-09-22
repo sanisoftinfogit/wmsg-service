@@ -766,104 +766,6 @@ async function getGroupNumbers(req, res) {
 }
 
 
-// async function sendBulkMessage(req, res) {
-//   const { sessionId, numbers, caption, message } = req.body;
-//   const files = req.files;
-
-//   // ✅ Validation
-//   if (!sessionId || !numbers || !Array.isArray(numbers) || numbers.length === 0) {
-//     return res.status(400).json({
-//       success: false,
-//       message: "SessionId and numbers (array) are required",
-//     });
-//   }
-
-//   let sock = sessions[sessionId];
-//   if (!sock) {
-//     return res.status(400).json({
-//       success: false,
-//       message: "Session not found. Please create session first.",
-//     });
-//   }
-
-//   if (!sock.authState?.creds) {
-//     return res.status(400).json({
-//       success: false,
-//       message: "Session exists but not initialized. Please scan QR again.",
-//     });
-//   }
-
-//   // ✅ Immediate response to client
-//   res.json({
-//     success: true,
-//     message: `Bulk message process started. Messages will be sent in background with random delay (22s - 35s)`,
-//     totalNumbers: numbers.length,
-//   });
-
-//   // ✅ Background bulk sending
-//   (async () => {
-//     for (const number of numbers) {
-//       const jid = number.includes("@s.whatsapp.net")
-//         ? number
-//         : `${number}@s.whatsapp.net`;
-
-//       try {
-//         // 1️⃣ Send text message first
-//         if (message) {
-//           await sock.sendMessage(jid, { text: message });
-//         }
-
-//         // 2️⃣ Send media files (if any)
-//         if (files && files.length > 0) {
-//           for (const file of files) {
-//             const mime = file.mimetype;
-
-//             if (mime.startsWith("image/")) {
-//               // 🖼️ Image
-//               await sock.sendMessage(jid, {
-//                 image: file.buffer,
-//                 caption: caption || "",
-//               });
-//             } else if (mime.startsWith("video/")) {
-//               // 🎥 Video
-//               await sock.sendMessage(jid, {
-//                 video: file.buffer,
-//                 caption: caption || "",
-//               });
-//             } else if (mime.startsWith("audio/")) {
-//               // 🎵 Audio
-//               await sock.sendMessage(jid, {
-//                 audio: file.buffer,
-//                 mimetype: mime,
-//               });
-//             } else {
-//               // 📄 Document (PDF, text, etc.)
-//               await sock.sendMessage(jid, {
-//                 document: file.buffer,
-//                 fileName: file.originalname,
-//                 mimetype: mime,
-//                 caption: caption || "",
-//               });
-//             }
-//           }
-//         }
-
-//         console.log(`✅ Sent to ${number}`);
-//       } catch (err) {
-//         console.error(`❌ Failed to send to ${number}:`, err.message);
-//       }
-
-//       // 3️⃣ Random delay between 22s - 35s
-//       const randomDelay = getRandomDelay();
-//       console.log(`⏳ Waiting ${randomDelay / 1000} sec before next message...`);
-//       await new Promise((resolve) => setTimeout(resolve, randomDelay));
-//     }
-
-//     console.log("🎉 Bulk sending finished!");
-//   })();
-// }
-
-
 async function sendBulkMessage(req, res) {
   const { sessionId, numbers, caption, message } = req.body;
   const files = req.files;
@@ -891,18 +793,14 @@ async function sendBulkMessage(req, res) {
     });
   }
 
-
+  // ✅ Immediate response to client
   res.json({
     success: true,
     message: `Bulk message process started. Messages will be sent in background with random delay (22s - 35s)`,
     totalNumbers: numbers.length,
   });
 
-
-  const getTypingDelay = () =>
-    Math.floor(Math.random() * (5000 - 2000 + 1)) + 2000; // 2–5 sec
-
-
+  // ✅ Background bulk sending
   (async () => {
     for (const number of numbers) {
       const jid = number.includes("@s.whatsapp.net")
@@ -910,48 +808,36 @@ async function sendBulkMessage(req, res) {
         : `${number}@s.whatsapp.net`;
 
       try {
-        // 1️⃣ Send text message with typing simulation
+        // 1️⃣ Send text message first
         if (message) {
-          await sock.presenceSubscribe(jid);
-          await sock.sendPresenceUpdate("composing", jid);
-
-          const typingDelay = getTypingDelay();
-          console.log(`✍️ Simulating typing for ${typingDelay / 1000}s before sending text to ${number}`);
-          await new Promise((res) => setTimeout(res, typingDelay));
-
-          await sock.sendPresenceUpdate("paused", jid);
-
           await sock.sendMessage(jid, { text: message });
         }
 
-        // 2️⃣ Send media files (if any) with "uploading" simulation
+        // 2️⃣ Send media files (if any)
         if (files && files.length > 0) {
           for (const file of files) {
             const mime = file.mimetype;
 
-            await sock.presenceSubscribe(jid);
-            await sock.sendPresenceUpdate("composing", jid); // simulate "uploading..."
-            const uploadDelay = getTypingDelay();
-            console.log(`📤 Simulating upload for ${uploadDelay / 1000}s before sending media to ${number}`);
-            await new Promise((res) => setTimeout(res, uploadDelay));
-            await sock.sendPresenceUpdate("paused", jid);
-
             if (mime.startsWith("image/")) {
+              // 🖼️ Image
               await sock.sendMessage(jid, {
                 image: file.buffer,
                 caption: caption || "",
               });
             } else if (mime.startsWith("video/")) {
+              // 🎥 Video
               await sock.sendMessage(jid, {
                 video: file.buffer,
                 caption: caption || "",
               });
             } else if (mime.startsWith("audio/")) {
+              // 🎵 Audio
               await sock.sendMessage(jid, {
                 audio: file.buffer,
                 mimetype: mime,
               });
             } else {
+              // 📄 Document (PDF, text, etc.)
               await sock.sendMessage(jid, {
                 document: file.buffer,
                 fileName: file.originalname,
@@ -967,7 +853,7 @@ async function sendBulkMessage(req, res) {
         console.error(`❌ Failed to send to ${number}:`, err.message);
       }
 
-      // 3️⃣ Random delay between 22s - 35s before next number
+      // 3️⃣ Random delay between 22s - 35s
       const randomDelay = getRandomDelay();
       console.log(`⏳ Waiting ${randomDelay / 1000} sec before next message...`);
       await new Promise((resolve) => setTimeout(resolve, randomDelay));
@@ -976,6 +862,120 @@ async function sendBulkMessage(req, res) {
     console.log("🎉 Bulk sending finished!");
   })();
 }
+
+
+// async function sendBulkMessage(req, res) {
+//   const { sessionId, numbers, caption, message } = req.body;
+//   const files = req.files;
+
+//   // ✅ Validation
+//   if (!sessionId || !numbers || !Array.isArray(numbers) || numbers.length === 0) {
+//     return res.status(400).json({
+//       success: false,
+//       message: "SessionId and numbers (array) are required",
+//     });
+//   }
+
+//   let sock = sessions[sessionId];
+//   if (!sock) {
+//     return res.status(400).json({
+//       success: false,
+//       message: "Session not found. Please create session first.",
+//     });
+//   }
+
+//   if (!sock.authState?.creds) {
+//     return res.status(400).json({
+//       success: false,
+//       message: "Session exists but not initialized. Please scan QR again.",
+//     });
+//   }
+
+
+//   res.json({
+//     success: true,
+//     message: `Bulk message process started. Messages will be sent in background with random delay (22s - 35s)`,
+//     totalNumbers: numbers.length,
+//   });
+
+
+//   const getTypingDelay = () =>
+//     Math.floor(Math.random() * (5000 - 2000 + 1)) + 2000; // 2–5 sec
+
+
+//   (async () => {
+//     for (const number of numbers) {
+//       const jid = number.includes("@s.whatsapp.net")
+//         ? number
+//         : `${number}@s.whatsapp.net`;
+
+//       try {
+//         // 1️⃣ Send text message with typing simulation
+//         if (message) {
+//           await sock.presenceSubscribe(jid);
+//           await sock.sendPresenceUpdate("composing", jid);
+
+//           const typingDelay = getTypingDelay();
+//           console.log(`✍️ Simulating typing for ${typingDelay / 1000}s before sending text to ${number}`);
+//           await new Promise((res) => setTimeout(res, typingDelay));
+
+//           await sock.sendPresenceUpdate("paused", jid);
+
+//           await sock.sendMessage(jid, { text: message });
+//         }
+
+//         // 2️⃣ Send media files (if any) with "uploading" simulation
+//         if (files && files.length > 0) {
+//           for (const file of files) {
+//             const mime = file.mimetype;
+
+//             await sock.presenceSubscribe(jid);
+//             await sock.sendPresenceUpdate("composing", jid); // simulate "uploading..."
+//             const uploadDelay = getTypingDelay();
+//             console.log(`📤 Simulating upload for ${uploadDelay / 1000}s before sending media to ${number}`);
+//             await new Promise((res) => setTimeout(res, uploadDelay));
+//             await sock.sendPresenceUpdate("paused", jid);
+
+//             if (mime.startsWith("image/")) {
+//               await sock.sendMessage(jid, {
+//                 image: file.buffer,
+//                 caption: caption || "",
+//               });
+//             } else if (mime.startsWith("video/")) {
+//               await sock.sendMessage(jid, {
+//                 video: file.buffer,
+//                 caption: caption || "",
+//               });
+//             } else if (mime.startsWith("audio/")) {
+//               await sock.sendMessage(jid, {
+//                 audio: file.buffer,
+//                 mimetype: mime,
+//               });
+//             } else {
+//               await sock.sendMessage(jid, {
+//                 document: file.buffer,
+//                 fileName: file.originalname,
+//                 mimetype: mime,
+//                 caption: caption || "",
+//               });
+//             }
+//           }
+//         }
+
+//         console.log(`✅ Sent to ${number}`);
+//       } catch (err) {
+//         console.error(`❌ Failed to send to ${number}:`, err.message);
+//       }
+
+//       // 3️⃣ Random delay between 22s - 35s before next number
+//       const randomDelay = getRandomDelay();
+//       console.log(`⏳ Waiting ${randomDelay / 1000} sec before next message...`);
+//       await new Promise((resolve) => setTimeout(resolve, randomDelay));
+//     }
+
+//     console.log("🎉 Bulk sending finished!");
+//   })();
+// }
 
 // 🔹 Helper function (use only this one for random delay)
 function getRandomDelay(min = 25000, max = 55000) {
