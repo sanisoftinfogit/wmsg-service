@@ -875,73 +875,155 @@ async function sendBulkMessage(req, res) {
   // ✅ Immediate response to client
   res.json({
     success: true,
-    message: `Bulk message process started. Messages will be sent in background with random delay (22s - 35s)`,
+    message: `Bulk message process started. Messages will be sent in background with extended delays`,
     totalNumbers: numbers.length,
   });
 
-  // ✅ Background bulk sending
+  // ✅ Enhanced background bulk sending
   (async () => {
-    for (const number of numbers) {
+    let sentCount = 0;
+    let failedCount = 0;
+    const batchSize = 5; // Send in small batches
+    const longBreakAfter = 10; // Take longer break after every 10 messages
+
+    for (let i = 0; i < numbers.length; i++) {
+      const number = numbers[i];
       const jid = number.includes("@s.whatsapp.net")
         ? number
         : `${number}@s.whatsapp.net`;
 
       try {
-        // 1️⃣ Send text message first
-        if (message) {
-          await sock.sendMessage(jid, { text: message });
+        // 🔍 Check session health before sending
+        if (!sessions[sessionId] || !sessions[sessionId].authState?.creds) {
+          console.error(`❌ Session ${sessionId} disconnected at message ${i + 1}`);
+          break;
         }
 
-        // 2️⃣ Send media files (if any)
-        if (files && files.length > 0) {
-          for (const file of files) {
-            const mime = file.mimetype;
-
-            if (mime.startsWith("image/")) {
-              // 🖼️ Image
-              await sock.sendMessage(jid, {
-                image: file.buffer,
-                caption: caption || "",
-              });
-            } else if (mime.startsWith("video/")) {
-              // 🎥 Video
-              await sock.sendMessage(jid, {
-                video: file.buffer,
-                caption: caption || "",
-              });
-            } else if (mime.startsWith("audio/")) {
-              // 🎵 Audio
-              await sock.sendMessage(jid, {
-                audio: file.buffer,
-                mimetype: mime,
-              });
-            } else {
-              // 📄 Document (PDF, text, etc.)
-              await sock.sendMessage(jid, {
-                document: file.buffer,
-                fileName: file.originalname,
-                mimetype: mime,
-                caption: caption || "",
-              });
-            }
-          }
+        // 📤 Send message with retry mechanism
+        const success = await sendSingleMessageWithRetry(sessions[sessionId], jid, message, files, caption);
+       
+        if (success) {
+          sentCount++;
+          console.log(`✅ Sent to ${number} (${sentCount}/${numbers.length})`);
+        } else {
+          failedCount++;
+          console.log(`❌ Failed to send to ${number} after retries`);
         }
 
-        console.log(`✅ Sent to ${number}`);
       } catch (err) {
-        console.error(`❌ Failed to send to ${number}:`, err.message);
+        failedCount++;
+        console.error(`❌ Error sending to ${number}:`, err.message);
       }
 
-      // 3️⃣ Random delay between 22s - 35s
-      const randomDelay = getRandomDelay();
-      console.log(`⏳ Waiting ${randomDelay / 1000} sec before next message...`);
-      await new Promise((resolve) => setTimeout(resolve, randomDelay));
+      // 🕐 Dynamic delay system
+      if (i < numbers.length - 1) { // Don't wait after the last message
+        let delay;
+       
+        if ((i + 1) % longBreakAfter === 0) {
+          // Longer break every 10 messages (2-4 minutes)
+          delay = getRandomDelay(120000, 240000);
+          console.log(`🛑 Taking long break after ${i + 1} messages: ${delay / 1000} seconds`);
+        } else if ((i + 1) % batchSize === 0) {
+          // Medium break every 5 messages (45-90 seconds)
+          delay = getRandomDelay(45000, 90000);
+          console.log(`⏸️ Batch break after ${i + 1} messages: ${delay / 1000} seconds`);
+        } else {
+          // Normal delay between messages (30-60 seconds)
+          delay = getRandomDelay(30000, 60000);
+          console.log(`⏳ Regular delay: ${delay / 1000} seconds`);
+        }
+       
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
     }
 
-    console.log("🎉 Bulk sending finished!");
+    console.log(`🎉 Bulk sending completed! Sent: ${sentCount}, Failed: ${failedCount}`);
   })();
 }
 
+// 📤 Helper function to send single message with retry
+async function sendSingleMessageWithRetry(sock, jid, message, files, caption, maxRetries = 2) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // 1️⃣ Send text message first
+      if (message && message.trim()) {
+        await sock.sendMessage(jid, { text: message });
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Small gap between text and media
+      }
+
+      // 2️⃣ Send media files (if any)
+      if (files && files.length > 0) {
+        for (const file of files) {
+          const mime = file.mimetype;
+
+          if (mime.startsWith("image/")) {
+            await sock.sendMessage(jid, {
+              image: file.buffer,
+              caption: caption || "",
+            });
+          } else if (mime.startsWith("video/")) {
+            await sock.sendMessage(jid, {
+              video: file.buffer,
+              caption: caption || "",
+            });
+          } else if (mime.startsWith("audio/")) {
+            await sock.sendMessage(jid, {
+              audio: file.buffer,
+              mimetype: mime,
+            });
+          } else {
+            await sock.sendMessage(jid, {
+              document: file.buffer,
+              fileName: file.originalname,
+              mimetype: mime,
+              caption: caption || "",
+            });
+          }
+         
+          // Small delay between multiple files
+          if (files.length > 1) {
+            await new Promise(resolve => setTimeout(resolve, 3000));
+          }
+        }
+      }
+
+      return true; // Success
+    } catch (err) {
+      console.error(`❌ Attempt ${attempt} failed for ${jid}:`, err.message);
+     
+      if (attempt < maxRetries) {
+        // Wait before retry (exponential backoff)
+        const retryDelay = Math.pow(2, attempt) * 5000; // 10s, 20s, 40s...
+        console.log(`⏳ Retrying in ${retryDelay / 1000} seconds...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
+    }
+  }
+ 
+  return false; // Failed after all retries
+}
+
+// 📊 Enhanced random delay with longer intervals
+function getRandomDelay(min = 30000, max = 60000) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+// 🔍 Function to check session health
+async function checkSessionHealth(sessionId) {
+  const sock = sessions[sessionId];
+  if (!sock || !sock.authState?.creds) {
+    return false;
+  }
+ 
+  try {
+    // Try to get user info to verify connection
+    await sock.user;
+    return true;
+  } catch (err) {
+    console.error(`Session ${sessionId} health check failed:`, err.message);
+    return false;
+  }
+}
 // 🔹 Helper function
 function getRandomDelay(min = 22000, max = 35000) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
