@@ -849,7 +849,7 @@ async function sendBulkMessage(req, res) {
   const { sessionId, numbers, caption, message } = req.body;
   const files = req.files;
 
-  // ✅ Validation
+ 
   if (!sessionId || !numbers || !Array.isArray(numbers) || numbers.length === 0) {
     return res.status(400).json({
       success: false,
@@ -872,14 +872,14 @@ async function sendBulkMessage(req, res) {
     });
   }
 
-  // ✅ Immediate response to client
+ 
   res.json({
     success: true,
     message: `Bulk message process started. Messages will be sent in background with extended delays`,
     totalNumbers: numbers.length,
   });
 
-  // ✅ Enhanced background bulk sending
+
   (async () => {
     let sentCount = 0;
     let failedCount = 0;
