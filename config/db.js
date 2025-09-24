@@ -16,6 +16,7 @@ const config = {
 async function getConnection() {
   try {
     let pool = await sql.connect(config);
+    console.log("✅ Database connected!");
     return pool;
   } catch (err) {
     console.error("❌ Database connection failed:", err);

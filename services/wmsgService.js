@@ -64,27 +64,6 @@ async function insertMSGSchedule({ login_id, mobile, jid, msdate, medate, mtime 
   }
 }
 
-async function updateMSGSchedule({ login_id, mobile, jid, msdate, medate, mtime }) {
-  try {
-    let pool = await getConnection();
-
-    let result = await pool.request()
-      .input('Action', sql.NVarChar(100), 'UpdateMSGSchedule')
-      .input('login_id', sql.VarChar(20), login_id)
-      .input('mobile', sql.VarChar(20), mobile)
-      .input('jid', sql.Int, jid)
-      .input('msdate', sql.Date, msdate)
-      .input('medate', sql.Date, medate)
-      .input('mtime', sql.NVarChar(20), mtime)
-      .output('Result', sql.Int)
-      .execute('saniszu9_1.sp_wmsg');
-
-    return result.output.Result;
-  } catch (err) {
-    console.error("❌ Error in updateMSGSchedule service:", err);
-    throw err;
-  }
-}
 
 async function deleteSession({ mobile, login_id }) {
   try {
@@ -229,4 +208,4 @@ async function execSP(spName, inputParams = {}) {
 
 
 
-module.exports = { insertMobileRegistration,updateMSGSchedule,deleteSession,insertGroup, updateGroup,getGroupsByLoginId,getGroupNumbersByGroupId,insertMSGSchedule,listMSGSchedules,execSP};
+module.exports = { insertMobileRegistration,deleteSession,insertGroup, updateGroup,getGroupsByLoginId,getGroupNumbersByGroupId,insertMSGSchedule,listMSGSchedules,execSP};

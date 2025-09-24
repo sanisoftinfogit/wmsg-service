@@ -7,10 +7,11 @@ const { insertMobileRegistration } = require("../services/wmsgService");
 const { insertGroup, updateGroup } = require('../services/wmsgService');
 const { getGroupsByLoginId } = require("../services/wmsgService");
 const { getGroupNumbersByGroupId } = require("../services/wmsgService");
+// const { insertMsgSchedule } = require('../services/wmsgService');
 const { insertMSGSchedule } = require('../services/wmsgService');
 const { listMSGSchedules } = require('../services/wmsgService');
 const { execSP } = require('../services/wmsgService');
-const { updateMSGSchedule } = require('../services/wmsgService');
+
 
 
 
@@ -141,6 +142,8 @@ async function sendMessage(req, res) {
 }
 
 
+
+
 // async function scheduleMessage(req, res) {
 //   try {
 //     const { sessionId, numbers, message, time, startDate, endDate, login_id } = req.body;
@@ -241,102 +244,10 @@ async function sendMessage(req, res) {
 // }
 
 
-// --------------------
-
-
-// const jobs = new Map();
-
-// let jidCounter = 1;
-// async function scheduleMessage(req, res) {
-//   try {
-//     const { sessionId, numbers, message, time, startDate, endDate, login_id } = req.body;
-//     const files = req.files || [];
-
-//     if (!sessionId || !numbers || !message || !time || !startDate || !endDate) {
-//       return res.status(400).json({ success: false, message: "Missing required fields" });
-//     }
-
-//     let numbersArray = Array.isArray(numbers) ? numbers : 
-//                       typeof numbers === "string" ? JSON.parse(numbers) : [];
-//     if (!Array.isArray(numbersArray) || numbersArray.length === 0) {
-//       return res.status(400).json({ success: false, message: "Invalid numbers" });
-//     }
-
-//     let sock = sessions[sessionId];
-//     if (!sock) {
-//       return res.status(400).json({ success: false, message: "Session not found" });
-//     }
-
-//     const [hours, minutes, seconds] = time.split(":").map(Number);
-//     const [sy, sm, sd] = startDate.split("-").map(Number);
-//     const [ey, em, ed] = endDate.split("-").map(Number);
-
-//     const start = new Date(sy, sm - 1, sd, hours, minutes, seconds);
-//     const end = new Date(ey, em - 1, ed, 23, 59, 59);
-
-//     if (isNaN(start) || isNaN(end) || start > end) {
-//       return res.status(400).json({ success: false, message: "Invalid date/time" });
-//     }
-
-//     const jid = jidCounter++;
-
-//     // DB insert
-//     for (const number of numbersArray) {
-//       await insertMSGSchedule({
-//         login_id,
-//         mobile: number,
-//         jid,
-//         msdate: startDate,
-//         medate: endDate,
-//         mtime: time
-//       }).catch(err => console.error("❌ DB insert failed:", err));
-//     }
-
-//     // Schedule job
-//     const rule = new schedule.RecurrenceRule();
-//     rule.hour = hours;
-//     rule.minute = minutes;
-//     rule.second = seconds;
-
-//     const job = schedule.scheduleJob(rule, async () => {
-//       const now = new Date();
-//       if (now < start) return;
-//       if (now > end) {
-//         console.log(`🛑 Job ${jid} ended`);
-//         job.cancel();
-//         jobs.delete(jid);
-//         return;
-//       }
-
-//       for (const number of numbersArray) {
-//         const targetJid = number.includes("@s.whatsapp.net") ? number : `${number}@s.whatsapp.net`;
-
-//         for (const file of files) {
-//           await sock.sendMessage(targetJid, { image: file.buffer, mimetype: file.mimetype });
-          
-//         }
-
-//         if (message.trim()) {
-//           await sock.sendMessage(targetJid, { text: message });
-           
-//         }
-//       }
-//     });
-
-//     // 🔹 Save in jobs Map
-//     jobs.set(jid, job);
-
-//     res.json({ success: true, message: "Scheduled", jid });
-//   } catch (err) {
-//     console.error("❌ scheduleMessage error:", err);
-//     res.status(500).json({ success: false, error: err.message });
-//   }
-// }
-
-
+// 🔹 Jobs map (jid → job reference)
 const jobs = new Map();
-let jidCounter = 1;
 
+let jidCounter = 1;
 async function scheduleMessage(req, res) {
   try {
     const { sessionId, numbers, message, time, startDate, endDate, login_id } = req.body;
@@ -346,11 +257,8 @@ async function scheduleMessage(req, res) {
       return res.status(400).json({ success: false, message: "Missing required fields" });
     }
 
-    let numbersArray = Array.isArray(numbers)
-      ? numbers
-      : typeof numbers === "string"
-      ? JSON.parse(numbers)
-      : [];
+    let numbersArray = Array.isArray(numbers) ? numbers : 
+                      typeof numbers === "string" ? JSON.parse(numbers) : [];
     if (!Array.isArray(numbersArray) || numbersArray.length === 0) {
       return res.status(400).json({ success: false, message: "Invalid numbers" });
     }
@@ -381,109 +289,11 @@ async function scheduleMessage(req, res) {
         jid,
         msdate: startDate,
         medate: endDate,
-        mtime: time,
-      }).catch((err) => console.error("❌ DB insert failed:", err));
+        mtime: time
+      }).catch(err => console.error("❌ DB insert failed:", err));
     }
 
-    // Schedule only ONCE at the given time
-    const job = schedule.scheduleJob(start, async () => {
-      const now = new Date();
-      if (now > end) {
-        console.log(`🛑 Job ${jid} expired`);
-        job.cancel();
-        jobs.delete(jid);
-        return;
-      }
-
-      console.log(`▶️ Job ${jid} started at ${now.toLocaleString()}`);
-
-      // 🔹 Send messages sequentially with delay
-      for (let i = 0; i < numbersArray.length; i++) {
-        const number = numbersArray[i];
-        const targetJid = number.includes("@s.whatsapp.net")
-          ? number
-          : `${number}@s.whatsapp.net`;
-
-        try {
-          // send files first
-          for (const file of files) {
-            await sock.sendMessage(targetJid, {
-              image: file.buffer,
-              mimetype: file.mimetype,
-            });
-          }
-
-          // send message
-          if (message.trim()) {
-            await sock.sendMessage(targetJid, { text: message });
-          }
-
-          console.log(`✅ Sent to ${number}`);
-        } catch (err) {
-          console.error(`❌ Failed to send to ${number}:`, err.message);
-        }
-
-        // ✅ Only wait if not the last number
-        if (i < numbersArray.length - 1) {
-          const randomDelay = getRandomDelay(25000, 35000);
-          console.log(`⏳ Waiting ${randomDelay / 1000}s before next number...`);
-          await new Promise((resolve) => setTimeout(resolve, randomDelay));
-        }
-      }
-
-      console.log(`🎉 Job ${jid} finished sending all messages`);
-    });
-
-    // Save in jobs Map
-    jobs.set(jid, job);
-
-    res.json({ success: true, message: "Scheduled", jid });
-  } catch (err) {
-    console.error("❌ scheduleMessage error:", err);
-    res.status(500).json({ success: false, error: err.message });
-  }
-}
-
-// Helper for random delay
-function getRandomDelay(min = 28000, max = 35000) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-
-async function updateMSGScheduleController(req, res) {
-  try {
-    const { login_id,sessionId, mobile, jid, msdate, medate, mtime } = req.body;
-
-    if (!login_id || !mobile || !jid || !msdate || !medate || !mtime) {
-      return res.status(400).json({ success: false, message: "Missing required fields" });
-    }
-
-    const result = await updateMSGSchedule({ login_id, mobile, jid, msdate, medate, mtime });
-
-    if (result !== 1) {
-      return res.json({ success: false, message: "Failed to update message schedule" });
-    }
-
-    // ✅ Cancel the old job if it exists
-    const oldJob = jobs.get(jid);
-    if (oldJob) {
-      oldJob.cancel();
-      jobs.delete(jid);
-    }
-
-    // ✅ Reschedule the job in memory
-    const [hours, minutes, seconds] = mtime.split(":").map(Number);
-    const [sy, sm, sd] = msdate.split("-").map(Number);
-    const [ey, em, ed] = medate.split("-").map(Number);
-
-    const start = new Date(sy, sm - 1, sd, hours, minutes, seconds);
-    const end = new Date(ey, em - 1, ed, 23, 59, 59);
-
-    const sock = sessions[sessionId]; // or your session mapping
-    if (!sock) {
-      return res.status(400).json({ success: false, message: "Session not found" });
-    }
-
+    // Schedule job
     const rule = new schedule.RecurrenceRule();
     rule.hour = hours;
     rule.minute = minutes;
@@ -493,28 +303,36 @@ async function updateMSGScheduleController(req, res) {
       const now = new Date();
       if (now < start) return;
       if (now > end) {
+        console.log(`🛑 Job ${jid} ended`);
         job.cancel();
         jobs.delete(jid);
         return;
       }
 
-      const targetJid = mobile.includes("@s.whatsapp.net") ? mobile : `${mobile}@s.whatsapp.net`;
+      for (const number of numbersArray) {
+        const targetJid = number.includes("@s.whatsapp.net") ? number : `${number}@s.whatsapp.net`;
 
-      // Send message (you can add file sending logic if needed)
-      await sock.sendMessage(targetJid, { text: "Your scheduled message" });
+        for (const file of files) {
+          await sock.sendMessage(targetJid, { image: file.buffer, mimetype: file.mimetype });
+          await delay(30000);
+        }
+
+        if (message.trim()) {
+          await sock.sendMessage(targetJid, { text: message });
+           await delay(30000);
+        }
+      }
     });
 
+    // 🔹 Save in jobs Map
     jobs.set(jid, job);
 
-    return res.json({ success: true, message: "Message schedule updated and rescheduled" });
-
+    res.json({ success: true, message: "Scheduled", jid });
   } catch (err) {
-    console.error("❌ updateMSGScheduleController error:", err);
-    return res.status(500).json({ success: false, error: err.message });
+    console.error("❌ scheduleMessage error:", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 }
-
-
 
 // async function deleteScheduledJob(req, res) {
 //   try {
@@ -765,10 +583,8 @@ async function getGroupNumbers(req, res) {
   }
 }
 
-
-
 // async function sendBulkMessage(req, res) {
-//   const { sessionId, numbers,caption, message } = req.body;
+//   const { sessionId, numbers, message,caption, delay = 30000 } = req.body;
 //   const files = req.files;
 
 //   // ✅ Validation
@@ -797,7 +613,7 @@ async function getGroupNumbers(req, res) {
 //   // ✅ Immediate response to client
 //   res.json({
 //     success: true,
-//     message: `Bulk message process started. Messages will be sent in background with random delay (28s - 35s)`,
+//     message: `Bulk message process started. Messages will be sent in background with ${delay / 1000} sec delay`,
 //     totalNumbers: numbers.length,
 //   });
 
@@ -819,7 +635,8 @@ async function getGroupNumbers(req, res) {
 //           for (const file of files) {
 //             await sock.sendMessage(jid, {
 //               image: file.buffer,
-//              caption: caption || "",
+//              mimetype: file.mimetype,
+//               caption: caption || "",
 //             });
 //           }
 //         }
@@ -829,27 +646,19 @@ async function getGroupNumbers(req, res) {
 //         console.error(`❌ Failed to send to ${number}:`, err.message);
 //       }
 
-//       // 3️⃣ Random delay between 28s - 35s
-//       const randomDelay = getRandomDelay();
-//       console.log(`⏳ Waiting ${randomDelay / 1000} sec before next message...`);
-//       await new Promise((resolve) => setTimeout(resolve, randomDelay));
+//       // 3️⃣ Wait before next message
+//       await new Promise((resolve) => setTimeout(resolve, delay));
 //     }
 
 //     console.log("🎉 Bulk sending finished!");
 //   })();
 // }
 
-// // 🔹 Helper function
-// function getRandomDelay(min = 22000, max = 35000) {
-//   return Math.floor(Math.random() * (max - min + 1)) + min;
-// }
-
-
 async function sendBulkMessage(req, res) {
-  const { sessionId, numbers, caption, message } = req.body;
+  const { sessionId, numbers,caption, message } = req.body;
   const files = req.files;
 
- 
+  // ✅ Validation
   if (!sessionId || !numbers || !Array.isArray(numbers) || numbers.length === 0) {
     return res.status(400).json({
       success: false,
@@ -872,160 +681,53 @@ async function sendBulkMessage(req, res) {
     });
   }
 
- 
+  // ✅ Immediate response to client
   res.json({
     success: true,
-    message: `Bulk message process started. Messages will be sent in background with extended delays`,
+    message: `Bulk message process started. Messages will be sent in background with random delay (28s - 35s)`,
     totalNumbers: numbers.length,
   });
 
-
+  // ✅ Background bulk sending
   (async () => {
-    let sentCount = 0;
-    let failedCount = 0;
-    const batchSize = 5; // Send in small batches
-    const longBreakAfter = 10; // Take longer break after every 10 messages
-
-    for (let i = 0; i < numbers.length; i++) {
-      const number = numbers[i];
+    for (const number of numbers) {
       const jid = number.includes("@s.whatsapp.net")
         ? number
         : `${number}@s.whatsapp.net`;
 
       try {
-        // 🔍 Check session health before sending
-        if (!sessions[sessionId] || !sessions[sessionId].authState?.creds) {
-          console.error(`❌ Session ${sessionId} disconnected at message ${i + 1}`);
-          break;
+        // 1️⃣ Send text message first
+        if (message) {
+          await sock.sendMessage(jid, { text: message });
         }
 
-        // 📤 Send message with retry mechanism
-        const success = await sendSingleMessageWithRetry(sessions[sessionId], jid, message, files, caption);
-       
-        if (success) {
-          sentCount++;
-          console.log(`✅ Sent to ${number} (${sentCount}/${numbers.length})`);
-        } else {
-          failedCount++;
-          console.log(`❌ Failed to send to ${number} after retries`);
+        // 2️⃣ Then send images (if any)
+        if (files && files.length > 0) {
+          for (const file of files) {
+            await sock.sendMessage(jid, {
+              image: file.buffer,
+             caption: caption || "",
+            });
+          }
         }
 
+        console.log(`✅ Sent to ${number}`);
       } catch (err) {
-        failedCount++;
-        console.error(`❌ Error sending to ${number}:`, err.message);
+        console.error(`❌ Failed to send to ${number}:`, err.message);
       }
 
-      // 🕐 Dynamic delay system
-      if (i < numbers.length - 1) { // Don't wait after the last message
-        let delay;
-       
-        if ((i + 1) % longBreakAfter === 0) {
-          // Longer break every 10 messages (2-4 minutes)
-          delay = getRandomDelay(120000, 240000);
-          console.log(`🛑 Taking long break after ${i + 1} messages: ${delay / 1000} seconds`);
-        } else if ((i + 1) % batchSize === 0) {
-          // Medium break every 5 messages (45-90 seconds)
-          delay = getRandomDelay(45000, 90000);
-          console.log(`⏸️ Batch break after ${i + 1} messages: ${delay / 1000} seconds`);
-        } else {
-          // Normal delay between messages (30-60 seconds)
-          delay = getRandomDelay(30000, 60000);
-          console.log(`⏳ Regular delay: ${delay / 1000} seconds`);
-        }
-       
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
+      // 3️⃣ Random delay between 28s - 35s
+      const randomDelay = getRandomDelay();
+      console.log(`⏳ Waiting ${randomDelay / 1000} sec before next message...`);
+      await new Promise((resolve) => setTimeout(resolve, randomDelay));
     }
 
-    console.log(`🎉 Bulk sending completed! Sent: ${sentCount}, Failed: ${failedCount}`);
+    console.log("🎉 Bulk sending finished!");
   })();
 }
 
-// 📤 Helper function to send single message with retry
-async function sendSingleMessageWithRetry(sock, jid, message, files, caption, maxRetries = 2) {
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      // 1️⃣ Send text message first
-      if (message && message.trim()) {
-        await sock.sendMessage(jid, { text: message });
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Small gap between text and media
-      }
-
-      // 2️⃣ Send media files (if any)
-      if (files && files.length > 0) {
-        for (const file of files) {
-          const mime = file.mimetype;
-
-          if (mime.startsWith("image/")) {
-            await sock.sendMessage(jid, {
-              image: file.buffer,
-              caption: caption || "",
-            });
-          } else if (mime.startsWith("video/")) {
-            await sock.sendMessage(jid, {
-              video: file.buffer,
-              caption: caption || "",
-            });
-          } else if (mime.startsWith("audio/")) {
-            await sock.sendMessage(jid, {
-              audio: file.buffer,
-              mimetype: mime,
-            });
-          } else {
-            await sock.sendMessage(jid, {
-              document: file.buffer,
-              fileName: file.originalname,
-              mimetype: mime,
-              caption: caption || "",
-            });
-          }
-         
-          // Small delay between multiple files
-          if (files.length > 1) {
-            await new Promise(resolve => setTimeout(resolve, 3000));
-          }
-        }
-      }
-
-      return true; // Success
-    } catch (err) {
-      console.error(`❌ Attempt ${attempt} failed for ${jid}:`, err.message);
-     
-      if (attempt < maxRetries) {
-        // Wait before retry (exponential backoff)
-        const retryDelay = Math.pow(2, attempt) * 5000; // 10s, 20s, 40s...
-        console.log(`⏳ Retrying in ${retryDelay / 1000} seconds...`);
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
-      }
-    }
-  }
- 
-  return false; // Failed after all retries
-}
-
-// 📊 Enhanced random delay with longer intervals
-function getRandomDelay(min = 30000, max = 60000) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-// 🔍 Function to check session health
-async function checkSessionHealth(sessionId) {
-  const sock = sessions[sessionId];
-  if (!sock || !sock.authState?.creds) {
-    return false;
-  }
- 
-  try {
-    // Try to get user info to verify connection
-    await sock.user;
-    return true;
-  } catch (err) {
-    console.error(`Session ${sessionId} health check failed:`, err.message);
-    return false;
-  }
-}
 // 🔹 Helper function
-function getRandomDelay(min = 22000, max = 35000) {
+function getRandomDelay(min = 55000, max = 75000) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
@@ -1054,4 +756,4 @@ async function getMSGSchedulesController(req, res) {
 }
 
 
-module.exports = { createSession, sendMessage,scheduleMessage,updateMSGScheduleController,checkSession,removeSession,addGroup, modifyGroup,getGroupList,deleteScheduledJob, getGroupNumbers,sendBulkMessage,getMSGSchedules:getMSGSchedulesController};
+module.exports = { createSession, sendMessage,scheduleMessage,checkSession,removeSession,addGroup, modifyGroup,getGroupList,deleteScheduledJob, getGroupNumbers,sendBulkMessage,getMSGSchedules:getMSGSchedulesController};
