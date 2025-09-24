@@ -27,11 +27,12 @@ async function createSession(req, res) {
   try {
     const sessionFolder = path.join(__dirname, "../sessions", sessionId);
 
+    // Check if session folder exists (means previously logged in successfully)
     if (fs.existsSync(sessionFolder)) {
       console.log(`🔄 Resuming existing session: ${sessionId}`);
 
       if (!sessions[sessionId]) {
-        await startSock(sessionId);
+        await startSock(sessionId, true); // true = existing session
       }
 
       return res.json({
@@ -41,8 +42,9 @@ async function createSession(req, res) {
       });
     }
 
+    // Start socket for new session (don't create folder yet)
     if (!sessions[sessionId]) {
-      await startSock(sessionId);
+      await startSock(sessionId, false); // false = new session
 
       try {
         const dbResult = await insertMobileRegistration({
@@ -57,7 +59,6 @@ async function createSession(req, res) {
       }
     }
 
-   
     let tries = 0;
     const interval = setInterval(() => {
       tries++;
@@ -83,6 +84,7 @@ async function createSession(req, res) {
     res.status(500).json({ success: false, message: "Server error" });
   }
 }
+
 
 async function sendMessage(req, res) {
   const { sessionId, number, message } = req.body;
@@ -372,7 +374,7 @@ async function deleteScheduledJob(req, res) {
 
     const jobId = Number(jid);
 
-    // 🔹 Memory मधून delete
+    
     const job = jobs.get(jobId);
     if (job) {
       job.cancel();
