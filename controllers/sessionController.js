@@ -1,18 +1,34 @@
 const { startSock, sessions, pendingQRCodes } = require("../sessionManager");
 const fs = require("fs");
 const path = require("path");
-const schedule = require("node-schedule"); 
+const schedule = require("node-schedule");
 const { deleteSession } = require("../services/wmsgService");
-const { insertMobileRegistration } = require("../services/wmsgService"); 
+const { insertMobileRegistration } = require("../services/wmsgService");
 const { insertGroup, updateGroup } = require('../services/wmsgService');
 const { getGroupsByLoginId } = require("../services/wmsgService");
 const { getGroupNumbersByGroupId } = require("../services/wmsgService");
-// const { insertMsgSchedule } = require('../services/wmsgService');
 const { insertMSGSchedule } = require('../services/wmsgService');
 const { listMSGSchedules } = require('../services/wmsgService');
 const { execSP } = require('../services/wmsgService');
 
+const { MultiClientManager, addTask } = require('../web-whatsapp');
 
+const multiClientManager = new MultiClientManager();
+
+function getSafeClientId(rawId) {
+  if (!rawId) rawId = '';
+  // coerce to string
+  rawId = String(rawId);
+  // remove leading/trailing whitespace
+  rawId = rawId.trim();
+  // remove non-printable / non-ascii characters
+  rawId = rawId.replace(/[^\x20-\x7E]/g, '');
+  // allow only alphanumeric, underscore, hyphen
+  rawId = rawId.replace(/[^A-Za-z0-9_-]/g, '_');
+  // fallback if empty
+  if (!rawId) rawId = 'wa_' + Date.now();
+  return rawId;
+}
 
 
 async function createSession(req, res) {
@@ -23,250 +39,52 @@ async function createSession(req, res) {
       .status(400)
       .json({ success: false, message: "Session ID is required" });
   }
-
+  const client = await multiClientManager.addClient(sessionId)
   try {
-    const sessionFolder = path.join(__dirname, "../sessions", sessionId);
-
-    // Check if session folder exists (means previously logged in successfully)
-    if (fs.existsSync(sessionFolder)) {
-      console.log(`🔄 Resuming existing session: ${sessionId}`);
-
-      if (!sessions[sessionId]) {
-        await startSock(sessionId, true); // true = existing session
-      }
-
-      return res.json({
-        success: true,
-        sessionId,
-        message: "Resumed existing session",
-      });
-    }
-
-    // Start socket for new session (don't create folder yet)
-    if (!sessions[sessionId]) {
-      await startSock(sessionId, false); // false = new session
-
-      try {
-        const dbResult = await insertMobileRegistration({
-          mobile,
-          userid,
-          login_id,
-          api_key,
-        });
-        console.log("📌 InsertMobileRegistration Result:", dbResult);
-      } catch (dbErr) {
-        console.error("❌ Mobile registration DB insert error:", dbErr);
-      }
-    }
-
-    let tries = 0;
-    const interval = setInterval(() => {
-      tries++;
-      if (pendingQRCodes[sessionId]) {
-        clearInterval(interval);
-        return res.json({
-          success: true,
-          sessionId,
-          qr: pendingQRCodes[sessionId],
-        });
-      }
-      if (tries > 20) {
-        clearInterval(interval);
-        return res.json({
-          success: false,
-          sessionId,
-          message: "QR not generated yet. Try again.",
-        });
-      }
-    }, 1000);
-  } catch (err) {
-    console.error("❌ Error in createSession:", err);
-    res.status(500).json({ success: false, message: "Server error" });
-  }
-}
-
-
-async function sendMessage(req, res) {
-  const { sessionId, number, message } = req.body;
-  const files = req.files; 
-
-  if (!sessionId || !number) {
-    return res.status(400).json({
-      success: false,
-      message: "SessionId and number are required",
+    const dbResult = await insertMobileRegistration({
+      mobile,
+      userid,
+      login_id,
+      api_key,
     });
+    console.log("📌 InsertMobileRegistration Result:", dbResult);
+  } catch (dbErr) {
+    console.error("❌ Mobile registration DB insert error:", dbErr);
   }
 
-  try {
-    let sock = sessions[sessionId];
+  const qr = await client.client.getQR();
+  return res.json({
+    success: true,
+    sessionId,
+    qr,
+  });
 
-    if (!sock) {
-      return res.status(400).json({
-        success: false,
-        message: "Session not found. Please create session first.",
-      });
-    }
-
-    if (!sock.authState?.creds) {
-      return res.status(400).json({
-        success: false,
-        message: "Session exists but not initialized. Please scan QR again.",
-      });
-    }
-
-    const jid = number.includes("@s.whatsapp.net")
-      ? number
-      : `${number}@s.whatsapp.net`;
-
-    console.log(`📨 Sending to ${jid} via session ${sessionId}`);
-
-    if (files && files.length > 0) {
-      for (const file of files) {
-        await sock.sendMessage(jid, {
-          image: file.buffer, 
-          caption: message || "",
-        });
-      }
-    } else if (req.file) {
-      await sock.sendMessage(jid, {
-        image: req.file.buffer, 
-        caption: message || "",
-      });
-    } else {
-      await sock.sendMessage(jid, { text: message });
-    }
-
-    res.json({ success: true, message: "Message sent successfully!" });
-  } catch (err) {
-    console.error("❌ sendMessage error:", err);
-    res.status(500).json({ success: false, error: err.message });
-  }
 }
 
-
-
-
-// async function scheduleMessage(req, res) {
-//   try {
-//     const { sessionId, numbers, message, time, startDate, endDate, login_id } = req.body;
-//     const files = req.files || [];
-
-//     // validation
-//     if (!sessionId || !numbers || !message || !time || !startDate || !endDate) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "SessionId, numbers (array), message, time, startDate and endDate are required",
-//       });
-//     }
-
-//     // parse numbers
-//     let numbersArray = Array.isArray(numbers) ? numbers : 
-//                         typeof numbers === "string" ? JSON.parse(numbers) : [];
-//     if (!Array.isArray(numbersArray) || numbersArray.length === 0) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Invalid numbers format (must be array)",
-//       });
-//     }
-
-//     // session check
-//     let sock = sessions[sessionId];
-//     if (!sock) {
-//       return res.status(400).json({ success: false, message: "Session not found" });
-//     }
-
-//     // parse time
-//     const [hours, minutes, seconds] = time.split(":").map(Number);
-//     const [sy, sm, sd] = startDate.split("-").map(Number);
-//     const [ey, em, ed] = endDate.split("-").map(Number);
-//     const start = new Date(sy, sm - 1, sd, hours, minutes, seconds);
-//     const end = new Date(ey, em - 1, ed, 23, 59, 59);
-
-//     if (isNaN(start) || isNaN(end) || start > end) {
-//       return res.status(400).json({ success: false, message: "Invalid date or time" });
-//     }
-
-//     // --- Generate a single jid for this schedule ---
-//     const jid = jidCounter++; // just once per schedule
-
-//     // --- Assign same jid to all numbers ---
-//     const scheduledNumbers = numbersArray.map(number => ({ number, jid }));
-
-//     for (const item of scheduledNumbers) {
-//       try {
-//         await insertMSGSchedule({
-//           login_id,
-//           mobile: item.number,
-//           jid: item.jid,
-//           msdate: startDate,
-//           medate: endDate,
-//           mtime: time
-//         });
-//       } catch (dbErr) {
-//         console.error("❌ DB insert failed for", item.number, dbErr);
-//       }
-//     }
-
-//     // --- Schedule job only to send messages ---
-//     const rule = new schedule.RecurrenceRule();
-//     rule.hour = hours;
-//     rule.minute = minutes;
-//     rule.second = seconds;
-
-//     schedule.scheduleJob(rule, async () => {
-//       const now = new Date();
-//       if (now < start) return;
-//       if (now > end) return; // job will auto-end
-
-//       for (const item of scheduledNumbers) {
-//         const targetJid = item.number.includes("@s.whatsapp.net") ? item.number : `${item.number}@s.whatsapp.net`;
-
-//         // send images
-//         for (const file of files) {
-//           await sock.sendMessage(targetJid, { image: file.buffer, mimetype: file.mimetype });
-//         }
-
-//         // send text
-//         if (message.trim()) {
-//           await sock.sendMessage(targetJid, { text: message });
-//         }
-//       }
-//     });
-
-//     res.json({
-//       success: true,
-//       message: `✅ Messages scheduled from ${startDate} to ${endDate} at ${time} for ${numbersArray.length} numbers`,
-//       fileCount: files.length,
-//     });
-
-//   } catch (err) {
-//     console.error("❌ scheduleMessage error:", err);
-//     res.status(500).json({ success: false, error: err.message });
-//   }
-// }
-
-
-// 🔹 Jobs map (jid → job reference)
 const jobs = new Map();
 
 let jidCounter = 1;
+
+
 async function scheduleMessage(req, res) {
   try {
     const { sessionId, numbers, message, time, startDate, endDate, login_id } = req.body;
-    const files = req.files || [];
+    let files = req.files || [];
 
     if (!sessionId || !numbers || !message || !time || !startDate || !endDate) {
       return res.status(400).json({ success: false, message: "Missing required fields" });
     }
 
-    let numbersArray = Array.isArray(numbers) ? numbers : 
-                      typeof numbers === "string" ? JSON.parse(numbers) : [];
+    let numbersArray = Array.isArray(numbers) ? numbers :
+      typeof numbers === "string" ? JSON.parse(numbers) : [];
     if (!Array.isArray(numbersArray) || numbersArray.length === 0) {
       return res.status(400).json({ success: false, message: "Invalid numbers" });
     }
 
-    let sock = sessions[sessionId];
+    let sock = multiClientManager.getClient(getSafeClientId(sessionId));
+    console.log(sock,"aaaaaaaaaaaa");
     if (!sock) {
+      
       return res.status(400).json({ success: false, message: "Session not found" });
     }
 
@@ -311,19 +129,10 @@ async function scheduleMessage(req, res) {
         return;
       }
 
-      for (const number of numbersArray) {
-        const targetJid = number.includes("@s.whatsapp.net") ? number : `${number}@s.whatsapp.net`;
-
-        for (const file of files) {
-          await sock.sendMessage(targetJid, { image: file.buffer, mimetype: file.mimetype });
-          await delay(30000);
-        }
-
-        if (message.trim()) {
-          await sock.sendMessage(targetJid, { text: message });
-           await delay(30000);
-        }
-      }
+      files = files.map(f => {
+        return f.path;
+      })
+      sendMsg(numbersArray, files, sessionId, message, message);
     });
 
     // 🔹 Save in jobs Map
@@ -336,37 +145,6 @@ async function scheduleMessage(req, res) {
   }
 }
 
-// async function deleteScheduledJob(req, res) {
-//   try {
-//     const { jid } = req.params;  // DELETE request URL: /api/delete-msg-schedule/:jid
-
-//     if (!jid) {
-//       return res.status(400).json({ success: false, message: "jid is required" });
-//     }
-
-//     const jobId = Number(jid); // Memory मध्ये Number type मध्ये ठेवले असल्यास
-
-//     // 🔹 Memory मधून delete
-//     const job = jobs.get(jobId);
-//     if (job) {
-//       job.cancel();
-//       jobs.delete(jobId);
-//       console.log(`✅ Job ${jid} cancelled in memory`);
-//       return res.json({ success: true, message: `Job ${jid} deleted from memory` });
-//     } else {
-//       console.log(`⚠️ Job ${jid} not found in memory (maybe server restarted)`);
-//       return res.status(404).json({ success: false, message: "Job not found in memory" });
-//     }
-
-//   } catch (err) {
-//     console.error("❌ deleteScheduledJob error:", err);
-//     res.status(500).json({ success: false, error: err.message });
-//   }
-// }
-
-
-
-
 async function deleteScheduledJob(req, res) {
   try {
     const { jid } = req.params;
@@ -374,7 +152,7 @@ async function deleteScheduledJob(req, res) {
 
     const jobId = Number(jid);
 
-    
+
     const job = jobs.get(jobId);
     if (job) {
       job.cancel();
@@ -526,7 +304,7 @@ async function modifyGroup(req, res) {
 }
 
 async function getGroupList(req, res) {
-  const { login_id } = req.params; 
+  const { login_id } = req.params;
 
   if (!login_id) {
     return res.status(400).json({
@@ -556,7 +334,7 @@ async function getGroupList(req, res) {
 }
 
 async function getGroupNumbers(req, res) {
-  const { group_id } = req.params; 
+  const { group_id } = req.params;
 
   if (!group_id) {
     return res.status(400).json({
@@ -585,80 +363,41 @@ async function getGroupNumbers(req, res) {
   }
 }
 
-// async function sendBulkMessage(req, res) {
-//   const { sessionId, numbers, message,caption, delay = 30000 } = req.body;
-//   const files = req.files;
+async function sendMsg(numbers, files, sessionId, message, caption) {
 
-//   // ✅ Validation
-//   if (!sessionId || !numbers || !Array.isArray(numbers) || numbers.length === 0) {
-//     return res.status(400).json({
-//       success: false,
-//       message: "SessionId and numbers (array) are required",
-//     });
-//   }
+  const c = multiClientManager.getClient(getSafeClientId(sessionId));
+  if (!c || !c.client.isReady()) {
+    return ({ error: 'Client is not authenticated yet...' });
+  }
 
-//   let sock = sessions[sessionId];
-//   if (!sock) {
-//     return res.status(400).json({
-//       success: false,
-//       message: "Session not found. Please create session first.",
-//     });
-//   }
+  numbers.forEach(fn => {
+    if (files.length) {
+      files.forEach(f => {
+        addTask(c.queue, c.pool, {
+          to: fn,
+          options: {
+            mediaFilePath: f,
+            caption
+          }
+        })
 
-//   if (!sock.authState?.creds) {
-//     return res.status(400).json({
-//       success: false,
-//       message: "Session exists but not initialized. Please scan QR again.",
-//     });
-//   }
+      })
+    } else {
+      addTask(c.queue, c.pool, {
+        to: fn,
+        message
+      })
+    }
+  }
+  )
 
-//   // ✅ Immediate response to client
-//   res.json({
-//     success: true,
-//     message: `Bulk message process started. Messages will be sent in background with ${delay / 1000} sec delay`,
-//     totalNumbers: numbers.length,
-//   });
+}
 
-//   // ✅ Background bulk sending
-//   (async () => {
-//     for (const number of numbers) {
-//       const jid = number.includes("@s.whatsapp.net")
-//         ? number
-//         : `${number}@s.whatsapp.net`;
 
-//       try {
-//         // 1️⃣ Send text message first
-//         if (message) {
-//           await sock.sendMessage(jid, { text: message });
-//         }
-
-//         // 2️⃣ Then send images (if any)
-//         if (files && files.length > 0) {
-//           for (const file of files) {
-//             await sock.sendMessage(jid, {
-//               image: file.buffer,
-//              mimetype: file.mimetype,
-//               caption: caption || "",
-//             });
-//           }
-//         }
-
-//         console.log(`✅ Sent to ${number}`);
-//       } catch (err) {
-//         console.error(`❌ Failed to send to ${number}:`, err.message);
-//       }
-
-//       // 3️⃣ Wait before next message
-//       await new Promise((resolve) => setTimeout(resolve, delay));
-//     }
-
-//     console.log("🎉 Bulk sending finished!");
-//   })();
-// }
 
 async function sendBulkMessage(req, res) {
-  const { sessionId, numbers,caption, message } = req.body;
-  const files = req.files;
+  const { sessionId, numbers, caption, message } = req.body;
+  let files = req.files || [];
 
   // ✅ Validation
   if (!sessionId || !numbers || !Array.isArray(numbers) || numbers.length === 0) {
@@ -668,69 +407,15 @@ async function sendBulkMessage(req, res) {
     });
   }
 
-  let sock = sessions[sessionId];
-  if (!sock) {
-    return res.status(400).json({
-      success: false,
-      message: "Session not found. Please create session first.",
-    });
-  }
+  files = files.map(f => {
+    return f.path;
+  })
+  sendMsg(numbers, files, sessionId, message, caption);
 
-  if (!sock.authState?.creds) {
-    return res.status(400).json({
-      success: false,
-      message: "Session exists but not initialized. Please scan QR again.",
-    });
-  }
-
-  // ✅ Immediate response to client
-  res.json({
+  return res.json({
     success: true,
-    message: `Bulk message process started. Messages will be sent in background with random delay (28s - 35s)`,
-    totalNumbers: numbers.length,
   });
 
-  // ✅ Background bulk sending
-  (async () => {
-    for (const number of numbers) {
-      const jid = number.includes("@s.whatsapp.net")
-        ? number
-        : `${number}@s.whatsapp.net`;
-
-      try {
-        // 1️⃣ Send text message first
-        if (message) {
-          await sock.sendMessage(jid, { text: message });
-        }
-
-        // 2️⃣ Then send images (if any)
-        if (files && files.length > 0) {
-          for (const file of files) {
-            await sock.sendMessage(jid, {
-              image: file.buffer,
-             caption: caption || "",
-            });
-          }
-        }
-
-        console.log(`✅ Sent to ${number}`);
-      } catch (err) {
-        console.error(`❌ Failed to send to ${number}:`, err.message);
-      }
-
-      // 3️⃣ Random delay between 28s - 35s
-      const randomDelay = getRandomDelay();
-      console.log(`⏳ Waiting ${randomDelay / 1000} sec before next message...`);
-      await new Promise((resolve) => setTimeout(resolve, randomDelay));
-    }
-
-    console.log("🎉 Bulk sending finished!");
-  })();
-}
-
-// 🔹 Helper function
-function getRandomDelay(min = 55000, max = 75000) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
 
@@ -758,4 +443,4 @@ async function getMSGSchedulesController(req, res) {
 }
 
 
-module.exports = { createSession, sendMessage,scheduleMessage,checkSession,removeSession,addGroup, modifyGroup,getGroupList,deleteScheduledJob, getGroupNumbers,sendBulkMessage,getMSGSchedules:getMSGSchedulesController};
+module.exports = { createSession, scheduleMessage, checkSession, removeSession, addGroup, modifyGroup, getGroupList, deleteScheduledJob, getGroupNumbers, sendBulkMessage, getMSGSchedules: getMSGSchedulesController };

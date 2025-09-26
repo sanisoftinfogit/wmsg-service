@@ -3,7 +3,6 @@ const router = express.Router();
 const multer = require('multer');
 
 const { createSession,
-    sendMessage,
     scheduleMessage,
     checkSession,
     removeSession,
@@ -19,7 +18,6 @@ const upload = multer();
 
 router.post('/create-session', createSession);
 
-router.post('/send-message', upload.array('images', 10), sendMessage);
 
 router.post(
   "/schedule-message",
