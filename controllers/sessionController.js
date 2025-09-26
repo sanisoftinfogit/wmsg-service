@@ -82,7 +82,7 @@ async function scheduleMessage(req, res) {
     }
 
     let sock = multiClientManager.getClient(getSafeClientId(sessionId));
-    console.log(sock,"aaaaaaaaaaaa");
+    
     if (!sock) {
       
       return res.status(400).json({ success: false, message: "Session not found" });

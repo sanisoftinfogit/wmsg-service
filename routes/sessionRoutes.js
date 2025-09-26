@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
+// const multer = require('multer');
+const upload=require('../middleware/multer')
 
 const { createSession,
     scheduleMessage,
@@ -10,10 +11,10 @@ const { createSession,
     modifyGroup,
     getGroupList,
     getGroupNumbers,
-sendBulkMessage,getMSGSchedules,deleteScheduledJob    } = require('../controllers/sessionController');
+sendBulkMessage,getMSGSchedules,deleteScheduledJob  } = require('../controllers/sessionController');
 
 
-const upload = multer();
+// const upload = multer();
 
 
 router.post('/create-session', createSession);
